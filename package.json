@@ -1,0 +1,37 @@
+{
+  "name": "log-forwarder",
+  "version": "3.0.0",
+  "description": "Multi-Source Log Forwarder to InfluxDB",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node server/index.js",
+    "build:frontend": "cd client && npm run build",
+    "build": "npm run build:frontend && pkg . --targets node18-win-x64 --output dist/log-forwarder.exe",
+    "pkg": "pkg . --targets node18-win-x64 --output dist/log-forwarder.exe"
+  },
+  "pkg": {
+    "assets": [
+      "client/dist/**/*",
+      "data.db"
+    ],
+    "outputPath": "dist"
+  },
+  "dependencies": {
+    "axios": "^1.9.0",
+    "better-sqlite3": "^9.6.0",
+    "cookie-parser": "^1.4.7",
+    "express": "^5.1.0",
+    "https-proxy-agent": "^7.0.6",
+    "jsonpath": "^1.1.1",
+    "lodash": "^4.17.21",
+    "node-cron": "^4.0.7",
+    "uuid": "^9.0.1"
+  },
+  "devDependencies": {
+    "pkg": "^4.3.8"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
