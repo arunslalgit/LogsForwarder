@@ -70,20 +70,31 @@ async function executeJob(job) {
     const processor = new LogProcessor(regexPatterns[0].pattern, tagMappings);
 
     const lookbackMs = (job.lookback_minutes || 5) * 60000;
-    // Apply lookback offset to avoid data gaps
-    // If last_run exists, subtract lookback to create overlap; otherwise go back by lookback
-    const lastRun = job.last_run
-      ? new Date(new Date(job.last_run).getTime() - lookbackMs)
-      : new Date(Date.now() - lookbackMs);
     const now = new Date();
+
+    // Calculate query time window
+    // If this is the first run, query from (now - lookback) to now
+    // If not first run, query from (last_run - lookback) to now to create overlap buffer
+    let queryStart;
+    if (!job.last_run) {
+      // First run: query lookback minutes from now
+      queryStart = new Date(now.getTime() - lookbackMs);
+      console.log(`Job ${job.id} - First run: querying from ${queryStart.toISOString()} to ${now.toISOString()} (${job.lookback_minutes || 5} min window)`);
+    } else {
+      // Subsequent runs: start from last_run minus lookback to create overlap
+      const lastRunTime = new Date(job.last_run);
+      queryStart = new Date(lastRunTime.getTime() - lookbackMs);
+      const windowMinutes = Math.round((now.getTime() - queryStart.getTime()) / 60000);
+      console.log(`Job ${job.id} - Query window: ${queryStart.toISOString()} to ${now.toISOString()} (~${windowMinutes} min, ${job.lookback_minutes || 5} min overlap)`);
+    }
 
     let logs;
     if (logSource.source_type === 'dynatrace') {
-      logs = await sourceClient.fetchLogs(queryFilter, lastRun, now);
+      logs = await sourceClient.fetchLogs(queryFilter, queryStart, now);
     } else if (logSource.source_type === 'splunk') {
       logs = await sourceClient.fetchLogs(
         queryFilter.searchQuery,
-        lastRun,
+        queryStart,
         now,
         queryFilter.index
       );

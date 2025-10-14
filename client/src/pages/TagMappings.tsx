@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Container, Title, Button, Paper, TextInput, Select, Table, ActionIcon, Group, Text, Switch } from '@mantine/core';
+import { Container, Title, Button, Paper, TextInput, Select, Table, ActionIcon, Group, Text, Switch, Code, Divider, Alert } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import { useNavigate, useParams } from 'react-router-dom';
-import { IconPlus, IconTrash, IconArrowLeft } from '@tabler/icons-react';
+import { IconPlus, IconTrash, IconArrowLeft, IconInfoCircle } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
 import { api } from '../api/client';
 import type { TagMapping, LogSource } from '../types';
@@ -12,6 +12,8 @@ export default function TagMappings() {
   const navigate = useNavigate();
   const [mappings, setMappings] = useState<TagMapping[]>([]);
   const [logSource, setLogSource] = useState<LogSource | null>(null);
+  const [extractedJSON, setExtractedJSON] = useState<any>(null);
+  const [loadingSamples, setLoadingSamples] = useState(false);
 
   const form = useForm({
     initialValues: {
@@ -65,6 +67,60 @@ export default function TagMappings() {
     }
   }
 
+  async function loadExtractedJSON() {
+    setLoadingSamples(true);
+    try {
+      // First get the regex pattern for this log source
+      const patterns = await api.getRegexPatterns(Number(id));
+      if (patterns.length === 0) {
+        notifications.show({
+          title: 'No Regex Pattern',
+          message: 'Please create a regex pattern first to extract JSON from logs',
+          color: 'yellow'
+        });
+        setLoadingSamples(false);
+        return;
+      }
+
+      // Get sample data from the log source
+      const result = await api.testLogSource(Number(id));
+      if (!result.success || !result.samples || result.samples.length === 0) {
+        notifications.show({
+          title: 'No Data',
+          message: 'No logs found in the last 5 minutes',
+          color: 'yellow'
+        });
+        setLoadingSamples(false);
+        return;
+      }
+
+      // Test the regex pattern on the first sample
+      const testResult = await api.testRegex({
+        pattern: patterns[0].pattern,
+        test_sample: JSON.stringify(result.samples[0])
+      });
+
+      if (testResult.success && testResult.parsed) {
+        setExtractedJSON(testResult.parsed);
+        notifications.show({
+          title: 'Success',
+          message: 'JSON extracted from sample log',
+          color: 'green'
+        });
+      } else {
+        notifications.show({
+          title: 'Extraction Failed',
+          message: 'Could not extract JSON using the regex pattern',
+          color: 'red'
+        });
+      }
+    } catch (error: any) {
+      notifications.show({ title: 'Error', message: error.message, color: 'red' });
+    } finally {
+      setLoadingSamples(false);
+    }
+  }
+
   return (
     <Container size="lg">
       <Group justify="space-between" mb="lg">
@@ -84,7 +140,31 @@ export default function TagMappings() {
       </Group>
 
       <Paper shadow="sm" p="lg" mb="xl">
-        <Title order={4} mb="md">Add New Mapping</Title>
+        <Group justify="space-between" mb="md">
+          <Title order={4}>Add New Mapping</Title>
+          <Button variant="light" size="sm" onClick={loadExtractedJSON} loading={loadingSamples}>
+            Load Sample JSON
+          </Button>
+        </Group>
+
+        {extractedJSON && (
+          <>
+            <Alert icon={<IconInfoCircle size={16} />} title="Extracted JSON Sample" color="blue" mb="md">
+              Use JSONPath expressions to extract values from this JSON structure
+            </Alert>
+            <Divider my="md" label="Sample Extracted JSON" labelPosition="center" />
+            <Paper withBorder p="sm" mb="md" style={{ maxHeight: '300px', overflow: 'auto' }}>
+              <Code block style={{ fontSize: '11px' }}>
+                {JSON.stringify(extractedJSON, null, 2)}
+              </Code>
+            </Paper>
+            <Text size="sm" c="dimmed" mb="md">
+              Example JSONPath expressions: <Code>$.userId</Code>, <Code>$.response.statusCode</Code>, <Code>$.tags[0]</Code>
+            </Text>
+            <Divider my="md" />
+          </>
+        )}
+
         <form onSubmit={form.onSubmit(handleCreate)}>
           <TextInput
             label="JSON Path"

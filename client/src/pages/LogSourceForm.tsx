@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
-import { Container, Title, Paper, TextInput, Select, Button, Switch, Group, PasswordInput, Textarea } from '@mantine/core';
+import { Container, Title, Paper, TextInput, Select, Button, Switch, Group, PasswordInput, Textarea, Alert, Code, Text, Divider, Stack } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import { useNavigate, useParams } from 'react-router-dom';
 import { notifications } from '@mantine/notifications';
+import { IconAlertCircle, IconCheck } from '@tabler/icons-react';
 import { api } from '../api/client';
 
 export default function LogSourceForm() {
@@ -11,6 +12,7 @@ export default function LogSourceForm() {
   const [sourceType, setSourceType] = useState('dynatrace');
   const [loading, setLoading] = useState(false);
   const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ success: boolean; count?: number; samples?: any[]; error?: string } | null>(null);
 
   const form = useForm({
     initialValues: {
@@ -76,24 +78,29 @@ export default function LogSourceForm() {
   }
 
   async function handleTest() {
-    if (!id) {
-      notifications.show({ title: 'Info', message: 'Save the source first to test connection', color: 'blue' });
-      return;
-    }
-
     setTesting(true);
+    setTestResult(null);
     try {
-      const result = await api.testLogSource(Number(id));
+      let result;
+      // Test with current form values (even if not saved yet)
+      if (id) {
+        result = await api.testLogSource(Number(id));
+      } else {
+        result = await api.testLogSourceConfig(form.values as any);
+      }
+
+      setTestResult(result);
       if (result.success) {
         notifications.show({
           title: 'Success',
-          message: `Connection successful! ${result.count !== undefined ? `Found ${result.count} logs.` : ''}`,
+          message: `Connection successful! Found ${result.count || 0} logs in last 5 minutes.`,
           color: 'green'
         });
       } else {
         notifications.show({ title: 'Error', message: result.error || 'Connection failed', color: 'red' });
       }
     } catch (error: any) {
+      setTestResult({ success: false, error: error.message });
       notifications.show({ title: 'Error', message: error.message, color: 'red' });
     } finally {
       setTesting(false);
@@ -223,11 +230,9 @@ export default function LogSourceForm() {
               <Button variant="subtle" onClick={() => navigate('/log-sources')}>
                 Cancel
               </Button>
-              {id && (
-                <Button variant="light" onClick={handleTest} loading={testing}>
-                  Test Connection
-                </Button>
-              )}
+              <Button variant="light" onClick={handleTest} loading={testing}>
+                Test & Preview Data
+              </Button>
             </Group>
             <Button type="submit" loading={loading}>
               {id ? 'Update' : 'Create'}
@@ -235,6 +240,44 @@ export default function LogSourceForm() {
           </Group>
         </form>
       </Paper>
+
+      {testResult && (
+        <Paper shadow="sm" p="lg" mt="lg">
+          {testResult.success ? (
+            <>
+              <Alert icon={<IconCheck size={16} />} title="Connection Successful" color="green" mb="md">
+                Found {testResult.count || 0} log entries in the last 5 minutes.
+                {testResult.samples && testResult.samples.length > 0 && (
+                  <Text size="sm" mt="xs">Showing {testResult.samples.length} sample(s) below.</Text>
+                )}
+              </Alert>
+
+              {testResult.samples && testResult.samples.length > 0 && (
+                <>
+                  <Divider my="md" label="Sample Data" labelPosition="center" />
+                  <Text size="sm" c="dimmed" mb="md">
+                    Use this sample data to configure regex patterns and field mappings
+                  </Text>
+                  <Stack gap="md">
+                    {testResult.samples.map((sample, idx) => (
+                      <Paper key={idx} withBorder p="sm" style={{ overflow: 'auto' }}>
+                        <Text size="xs" c="dimmed" mb="xs">Sample {idx + 1}</Text>
+                        <Code block style={{ fontSize: '11px' }}>
+                          {JSON.stringify(sample, null, 2)}
+                        </Code>
+                      </Paper>
+                    ))}
+                  </Stack>
+                </>
+              )}
+            </>
+          ) : (
+            <Alert icon={<IconAlertCircle size={16} />} title="Connection Failed" color="red">
+              {testResult.error || 'Unable to connect to the log source'}
+            </Alert>
+          )}
+        </Paper>
+      )}
     </Container>
   );
 }

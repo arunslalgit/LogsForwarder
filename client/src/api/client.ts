@@ -31,7 +31,11 @@ export const api = {
     body: JSON.stringify(data),
   }),
   deleteLogSource: (id: number) => request<{ message: string }>(`/log-sources/${id}`, { method: 'DELETE' }),
-  testLogSource: (id: number) => request<{ success: boolean; count?: number; error?: string }>(`/log-sources/${id}/test`, { method: 'POST' }),
+  testLogSource: (id: number) => request<{ success: boolean; count?: number; samples?: any[]; error?: string }>(`/log-sources/${id}/test`, { method: 'POST' }),
+  testLogSourceConfig: (data: Partial<LogSource>) => request<{ success: boolean; count?: number; samples?: any[]; error?: string }>('/log-sources/test-config', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  }),
 
   getRegexPatterns: (logSourceId: number) => request<RegexPattern[]>(`/regex-patterns/log-source/${logSourceId}`),
   createRegexPattern: (data: Partial<RegexPattern>) => request<{ id: number; message: string }>('/regex-patterns', {

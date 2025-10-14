@@ -52,6 +52,7 @@ export default function Jobs() {
             <Table.Th>Log Source</Table.Th>
             <Table.Th>InfluxDB Config</Table.Th>
             <Table.Th>Schedule</Table.Th>
+            <Table.Th>Lookback</Table.Th>
             <Table.Th>Last Run</Table.Th>
             <Table.Th>Status</Table.Th>
             <Table.Th>Actions</Table.Th>
@@ -67,6 +68,9 @@ export default function Jobs() {
               </Table.Td>
               <Table.Td>{job.influx_config_name}</Table.Td>
               <Table.Td><Text ff="monospace" size="sm">{job.cron_schedule}</Text></Table.Td>
+              <Table.Td>
+                <Text size="sm">{job.lookback_minutes || 5} min</Text>
+              </Table.Td>
               <Table.Td>
                 {job.last_run ? dayjs(job.last_run).format('MMM DD HH:mm') : 'Never'}
               </Table.Td>

@@ -73,15 +73,64 @@ router.post('/:id/test', async (req, res) => {
     }
 
     const client = LogSourceFactory.createClient(logSource);
+    const query = LogSourceFactory.getQueryFilter(logSource);
 
+    let logs;
     if (logSource.source_type === 'splunk') {
-      const result = await client.testConnection();
-      res.json(result);
+      // Fetch last 5 minutes of data, limit to 10 samples
+      logs = await client.fetchLogs(
+        query.searchQuery,
+        new Date(Date.now() - 5 * 60000),
+        new Date(),
+        query.index
+      );
     } else {
-      const query = LogSourceFactory.getQueryFilter(logSource);
-      const result = await client.fetchLogs(query, new Date(Date.now() - 60000), new Date());
-      res.json({ success: true, count: result.length });
+      // Dynatrace - fetch last 5 minutes
+      logs = await client.fetchLogs(query, new Date(Date.now() - 5 * 60000), new Date());
     }
+
+    // Return up to 10 sample logs
+    const samples = logs.slice(0, 10);
+    res.json({
+      success: true,
+      count: logs.length,
+      samples: samples
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Test connection with unsaved configuration
+router.post('/test-config', async (req, res) => {
+  try {
+    const config = req.body;
+
+    if (!config.source_type || !['dynatrace', 'splunk'].includes(config.source_type)) {
+      return res.status(400).json({ error: 'Invalid source_type' });
+    }
+
+    const client = LogSourceFactory.createClient(config);
+    const query = LogSourceFactory.getQueryFilter(config);
+
+    let logs;
+    if (config.source_type === 'splunk') {
+      logs = await client.fetchLogs(
+        query.searchQuery,
+        new Date(Date.now() - 5 * 60000),
+        new Date(),
+        query.index
+      );
+    } else {
+      logs = await client.fetchLogs(query, new Date(Date.now() - 5 * 60000), new Date());
+    }
+
+    const samples = logs.slice(0, 10);
+    res.json({
+      success: true,
+      count: logs.length,
+      samples: samples
+    });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Container, Title, Button, Paper, TextInput, Textarea, Table, ActionIcon, Group, Text, Code } from '@mantine/core';
+import { Container, Title, Button, Paper, TextInput, Textarea, Table, ActionIcon, Group, Text, Code, Stack, Divider, Select } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import { useNavigate, useParams } from 'react-router-dom';
 import { IconTrash, IconArrowLeft, IconCheck, IconX } from '@tabler/icons-react';
@@ -13,6 +13,8 @@ export default function RegexPatterns() {
   const [patterns, setPatterns] = useState<RegexPattern[]>([]);
   const [logSource, setLogSource] = useState<LogSource | null>(null);
   const [testResult, setTestResult] = useState<any>(null);
+  const [sampleData, setSampleData] = useState<any[]>([]);
+  const [loadingSamples, setLoadingSamples] = useState(false);
 
   const form = useForm({
     initialValues: {
@@ -36,6 +38,31 @@ export default function RegexPatterns() {
       setPatterns(patternsData);
     } catch (error: any) {
       notifications.show({ title: 'Error', message: error.message, color: 'red' });
+    }
+  }
+
+  async function loadSampleData() {
+    setLoadingSamples(true);
+    try {
+      const result = await api.testLogSource(Number(id));
+      if (result.success && result.samples) {
+        setSampleData(result.samples);
+        notifications.show({
+          title: 'Success',
+          message: `Loaded ${result.samples.length} sample log(s)`,
+          color: 'green'
+        });
+      } else {
+        notifications.show({
+          title: 'No Data',
+          message: 'No logs found in the last 5 minutes',
+          color: 'yellow'
+        });
+      }
+    } catch (error: any) {
+      notifications.show({ title: 'Error', message: error.message, color: 'red' });
+    } finally {
+      setLoadingSamples(false);
     }
   }
 
@@ -97,7 +124,47 @@ export default function RegexPatterns() {
       </Group>
 
       <Paper shadow="sm" p="lg" mb="xl">
-        <Title order={4} mb="md">Add New Pattern</Title>
+        <Group justify="space-between" mb="md">
+          <Title order={4}>Add New Pattern</Title>
+          <Button variant="light" size="sm" onClick={loadSampleData} loading={loadingSamples}>
+            Load Sample Data
+          </Button>
+        </Group>
+
+        {sampleData.length > 0 && (
+          <>
+            <Divider my="md" label="Sample Logs from Source" labelPosition="center" />
+            <Text size="sm" c="dimmed" mb="sm">
+              Select a sample log to use for testing your regex pattern
+            </Text>
+            <Select
+              placeholder="Select a sample log"
+              data={sampleData.map((sample, idx) => ({
+                value: String(idx),
+                label: `Sample ${idx + 1}: ${JSON.stringify(sample).substring(0, 100)}...`
+              }))}
+              mb="md"
+              onChange={(val) => {
+                if (val !== null) {
+                  const sample = sampleData[Number(val)];
+                  form.setFieldValue('test_sample', JSON.stringify(sample));
+                }
+              }}
+            />
+            <Stack gap="xs" mb="md">
+              {sampleData.slice(0, 3).map((sample, idx) => (
+                <Paper key={idx} withBorder p="xs" style={{ cursor: 'pointer' }} onClick={() => form.setFieldValue('test_sample', JSON.stringify(sample))}>
+                  <Text size="xs" c="dimmed" mb={4}>Sample {idx + 1} (click to use)</Text>
+                  <Code block style={{ fontSize: '10px', maxHeight: '60px', overflow: 'auto' }}>
+                    {JSON.stringify(sample, null, 2)}
+                  </Code>
+                </Paper>
+              ))}
+            </Stack>
+            <Divider my="md" />
+          </>
+        )}
+
         <form onSubmit={form.onSubmit(handleCreate)}>
           <TextInput
             label="Regex Pattern"
