@@ -12,12 +12,26 @@ class LogProcessor {
     const match = this.regex.exec(messageField);
     if (!match) return null;
 
+    let jsonString = match[0] || match[1];
+
+    // Try parsing as-is
     try {
-      const jsonString = match[0] || match[1];
       return JSON.parse(jsonString);
     } catch (e) {
-      console.error('JSON parse error:', e.message);
-      return null;
+      // Try unescaping once (for strings like {\"key\":\"value\"})
+      try {
+        const unescaped = jsonString.replace(/\\"/g, '"');
+        return JSON.parse(unescaped);
+      } catch (e2) {
+        // Try double-unescaping (for strings like {\\\"key\\\":\\\"value\\\"})
+        try {
+          const doubleUnescaped = jsonString.replace(/\\\\/g, '\\').replace(/\\"/g, '"');
+          return JSON.parse(doubleUnescaped);
+        } catch (e3) {
+          console.error('JSON parse error after all unescape attempts:', e3.message);
+          return null;
+        }
+      }
     }
   }
 

@@ -49,12 +49,52 @@ router.post('/test', (req, res) => {
     }
 
     let extracted = match[0];
+    let parsed = null;
+    let parseAttempts = [];
+
+    // Try parsing as-is
     try {
-      const parsed = JSON.parse(extracted);
-      res.json({ success: true, extracted, parsed });
+      parsed = JSON.parse(extracted);
+      return res.json({ success: true, extracted, parsed });
     } catch (e) {
-      res.json({ success: true, extracted, parsed: null, message: 'Not valid JSON' });
+      parseAttempts.push('Direct parse failed');
     }
+
+    // Try unescaping once (for strings like {\"key\":\"value\"})
+    try {
+      const unescaped = extracted.replace(/\\"/g, '"');
+      parsed = JSON.parse(unescaped);
+      return res.json({
+        success: true,
+        extracted,
+        parsed,
+        message: 'Parsed after unescaping'
+      });
+    } catch (e) {
+      parseAttempts.push('Unescape once failed');
+    }
+
+    // Try double-unescaping (for strings like {\\\"key\\\":\\\"value\\\"})
+    try {
+      const doubleUnescaped = extracted.replace(/\\\\/g, '\\').replace(/\\"/g, '"');
+      parsed = JSON.parse(doubleUnescaped);
+      return res.json({
+        success: true,
+        extracted,
+        parsed,
+        message: 'Parsed after double-unescaping'
+      });
+    } catch (e) {
+      parseAttempts.push('Double unescape failed');
+    }
+
+    // If all parsing attempts fail
+    res.json({
+      success: true,
+      extracted,
+      parsed: null,
+      message: `Not valid JSON (tried: ${parseAttempts.join(', ')})`
+    });
   } catch (error) {
     res.status(400).json({ success: false, error: error.message });
   }
