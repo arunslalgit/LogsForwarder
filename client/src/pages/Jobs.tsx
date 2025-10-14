@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Container, Title, Button, Table, Badge, ActionIcon, Group, Text } from '@mantine/core';
+import { Container, Title, Button, Table, Badge, ActionIcon, Group, Text, Tooltip } from '@mantine/core';
 import { useNavigate } from 'react-router-dom';
-import { IconPlus, IconEdit, IconTrash } from '@tabler/icons-react';
+import { IconPlus, IconEdit, IconTrash, IconPlayerPlay } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
 import { api } from '../api/client';
 import type { Job } from '../types';
@@ -9,6 +9,7 @@ import dayjs from 'dayjs';
 
 export default function Jobs() {
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [runningJobs, setRunningJobs] = useState<Set<number>>(new Set());
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -33,6 +34,34 @@ export default function Jobs() {
       loadJobs();
     } catch (error: any) {
       notifications.show({ title: 'Error', message: error.message, color: 'red' });
+    }
+  }
+
+  async function handleRunJob(id: number) {
+    setRunningJobs(prev => new Set(prev).add(id));
+    try {
+      const result = await api.runJob(id);
+      notifications.show({
+        title: 'Job Started',
+        message: result.message,
+        color: 'blue'
+      });
+      // Reload jobs after a delay to show updated last_run
+      setTimeout(() => {
+        loadJobs();
+        setRunningJobs(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(id);
+          return newSet;
+        });
+      }, 2000);
+    } catch (error: any) {
+      notifications.show({ title: 'Error', message: error.message, color: 'red' });
+      setRunningJobs(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(id);
+        return newSet;
+      });
     }
   }
 
@@ -81,20 +110,34 @@ export default function Jobs() {
               </Table.Td>
               <Table.Td>
                 <Group gap="xs">
-                  <ActionIcon
-                    variant="light"
-                    color="blue"
-                    onClick={() => navigate(`/jobs/${job.id}/edit`)}
-                  >
-                    <IconEdit size={16} />
-                  </ActionIcon>
-                  <ActionIcon
-                    variant="light"
-                    color="red"
-                    onClick={() => handleDelete(job.id)}
-                  >
-                    <IconTrash size={16} />
-                  </ActionIcon>
+                  <Tooltip label="Run Job Now">
+                    <ActionIcon
+                      variant="light"
+                      color="green"
+                      onClick={() => handleRunJob(job.id)}
+                      loading={runningJobs.has(job.id)}
+                    >
+                      <IconPlayerPlay size={16} />
+                    </ActionIcon>
+                  </Tooltip>
+                  <Tooltip label="Edit Job">
+                    <ActionIcon
+                      variant="light"
+                      color="blue"
+                      onClick={() => navigate(`/jobs/${job.id}/edit`)}
+                    >
+                      <IconEdit size={16} />
+                    </ActionIcon>
+                  </Tooltip>
+                  <Tooltip label="Delete Job">
+                    <ActionIcon
+                      variant="light"
+                      color="red"
+                      onClick={() => handleDelete(job.id)}
+                    >
+                      <IconTrash size={16} />
+                    </ActionIcon>
+                  </Tooltip>
                 </Group>
               </Table.Td>
             </Table.Tr>

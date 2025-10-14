@@ -211,6 +211,17 @@ function getAllJobs() {
   `).all();
 }
 
+function getJob(id) {
+  const db = getDatabase();
+  return db.prepare(`
+    SELECT j.*, ls.name as log_source_name, ls.source_type, ic.name as influx_config_name
+    FROM jobs j
+    JOIN log_sources ls ON j.log_source_id = ls.id
+    JOIN influx_configs ic ON j.influx_config_id = ic.id
+    WHERE j.id = ?
+  `).get(id);
+}
+
 function getEnabledJobs() {
   const db = getDatabase();
   return db.prepare(`
@@ -326,6 +337,7 @@ module.exports = {
   deleteInfluxConfig,
 
   getAllJobs,
+  getJob,
   getEnabledJobs,
   createJob,
   updateJob,

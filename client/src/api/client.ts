@@ -88,6 +88,7 @@ export const api = {
     body: JSON.stringify(data),
   }),
   deleteJob: (id: number) => request<{ message: string }>(`/jobs/${id}`, { method: 'DELETE' }),
+  runJob: (id: number) => request<{ success: boolean; message: string }>(`/jobs/${id}/run`, { method: 'POST' }),
 
   getActivityLogs: (limit = 100, offset = 0) => request<ActivityLog[]>(`/activity-logs?limit=${limit}&offset=${offset}`),
 
