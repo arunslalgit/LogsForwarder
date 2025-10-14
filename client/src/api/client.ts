@@ -31,8 +31,11 @@ export const api = {
     body: JSON.stringify(data),
   }),
   deleteLogSource: (id: number) => request<{ message: string }>(`/log-sources/${id}`, { method: 'DELETE' }),
-  testLogSource: (id: number) => request<{ success: boolean; count?: number; samples?: any[]; error?: string }>(`/log-sources/${id}/test`, { method: 'POST' }),
-  testLogSourceConfig: (data: Partial<LogSource>) => request<{ success: boolean; count?: number; samples?: any[]; error?: string }>('/log-sources/test-config', {
+  testLogSource: (id: number, timeWindowMinutes?: number) => request<{ success: boolean; count?: number; samples?: any[]; error?: string; timeWindowMinutes?: number }>(`/log-sources/${id}/test`, {
+    method: 'POST',
+    body: JSON.stringify({ timeWindowMinutes }),
+  }),
+  testLogSourceConfig: (data: Partial<LogSource> & { timeWindowMinutes?: number }) => request<{ success: boolean; count?: number; samples?: any[]; error?: string; timeWindowMinutes?: number }>('/log-sources/test-config', {
     method: 'POST',
     body: JSON.stringify(data),
   }),

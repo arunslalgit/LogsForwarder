@@ -43,21 +43,21 @@ export default function RegexPatterns() {
     }
   }
 
-  async function loadSampleData() {
+  async function loadSampleData(timeWindowMinutes: number = 5) {
     setLoadingSamples(true);
     try {
-      const result = await api.testLogSource(Number(id));
+      const result = await api.testLogSource(Number(id), timeWindowMinutes);
       if (result.success && result.samples) {
         setSampleData(result.samples);
         notifications.show({
           title: 'Success',
-          message: `Loaded ${result.samples.length} sample log(s)`,
+          message: `Loaded ${result.samples.length} sample log(s) from last ${result.timeWindowMinutes || timeWindowMinutes} minutes`,
           color: 'green'
         });
       } else {
         notifications.show({
           title: 'No Data',
-          message: 'No logs found in the last 5 minutes',
+          message: `No logs found in the last ${timeWindowMinutes} minutes`,
           color: 'yellow'
         });
       }
@@ -128,7 +128,7 @@ export default function RegexPatterns() {
       <Paper shadow="sm" p="lg" mb="xl">
         <Group justify="space-between" mb="md">
           <Title order={4}>Add New Pattern</Title>
-          <Button variant="light" size="sm" onClick={loadSampleData} loading={loadingSamples}>
+          <Button variant="light" size="sm" onClick={() => loadSampleData(5)} loading={loadingSamples}>
             Load Sample Data
           </Button>
         </Group>

@@ -72,21 +72,23 @@ router.post('/:id/test', async (req, res) => {
       return res.status(404).json({ error: 'Log source not found' });
     }
 
+    // Get time window from request body (in minutes, default 5)
+    const timeWindowMinutes = req.body.timeWindowMinutes || 5;
+    const timeWindowMs = timeWindowMinutes * 60000;
+
     const client = LogSourceFactory.createClient(logSource);
     const query = LogSourceFactory.getQueryFilter(logSource);
 
     let logs;
     if (logSource.source_type === 'splunk') {
-      // Fetch last 5 minutes of data, limit to 10 samples
       logs = await client.fetchLogs(
         query.searchQuery,
-        new Date(Date.now() - 5 * 60000),
+        new Date(Date.now() - timeWindowMs),
         new Date(),
         query.index
       );
     } else {
-      // Dynatrace - fetch last 5 minutes
-      logs = await client.fetchLogs(query, new Date(Date.now() - 5 * 60000), new Date());
+      logs = await client.fetchLogs(query, new Date(Date.now() - timeWindowMs), new Date());
     }
 
     // Return up to 10 sample logs
@@ -94,7 +96,8 @@ router.post('/:id/test', async (req, res) => {
     res.json({
       success: true,
       count: logs.length,
-      samples: samples
+      samples: samples,
+      timeWindowMinutes
     });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -110,6 +113,10 @@ router.post('/test-config', async (req, res) => {
       return res.status(400).json({ error: 'Invalid source_type' });
     }
 
+    // Get time window from request body (in minutes, default 5)
+    const timeWindowMinutes = config.timeWindowMinutes || 5;
+    const timeWindowMs = timeWindowMinutes * 60000;
+
     const client = LogSourceFactory.createClient(config);
     const query = LogSourceFactory.getQueryFilter(config);
 
@@ -117,19 +124,20 @@ router.post('/test-config', async (req, res) => {
     if (config.source_type === 'splunk') {
       logs = await client.fetchLogs(
         query.searchQuery,
-        new Date(Date.now() - 5 * 60000),
+        new Date(Date.now() - timeWindowMs),
         new Date(),
         query.index
       );
     } else {
-      logs = await client.fetchLogs(query, new Date(Date.now() - 5 * 60000), new Date());
+      logs = await client.fetchLogs(query, new Date(Date.now() - timeWindowMs), new Date());
     }
 
     const samples = logs.slice(0, 10);
     res.json({
       success: true,
       count: logs.length,
-      samples: samples
+      samples: samples,
+      timeWindowMinutes
     });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });

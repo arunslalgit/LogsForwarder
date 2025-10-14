@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Container, Title, Paper, TextInput, Select, Button, Switch, Group, PasswordInput, Textarea, Alert, Code, Text, Divider, Stack } from '@mantine/core';
+import { Container, Title, Paper, TextInput, Select, Button, Switch, Group, PasswordInput, Textarea, Alert, Code, Text, Divider, Stack, NumberInput } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import { useNavigate, useParams } from 'react-router-dom';
 import { notifications } from '@mantine/notifications';
@@ -12,7 +12,8 @@ export default function LogSourceForm() {
   const [sourceType, setSourceType] = useState('dynatrace');
   const [loading, setLoading] = useState(false);
   const [testing, setTesting] = useState(false);
-  const [testResult, setTestResult] = useState<{ success: boolean; count?: number; samples?: any[]; error?: string } | null>(null);
+  const [testResult, setTestResult] = useState<{ success: boolean; count?: number; samples?: any[]; error?: string; timeWindowMinutes?: number } | null>(null);
+  const [timeWindow, setTimeWindow] = useState(5);
 
   const form = useForm({
     initialValues: {
@@ -82,18 +83,15 @@ export default function LogSourceForm() {
     setTestResult(null);
     try {
       let result;
-      // Test with current form values (even if not saved yet)
-      if (id) {
-        result = await api.testLogSource(Number(id));
-      } else {
-        result = await api.testLogSourceConfig(form.values as any);
-      }
+      // ALWAYS test with current form values (not saved config) with time window
+      const testData = { ...form.values, timeWindowMinutes: timeWindow };
+      result = await api.testLogSourceConfig(testData as any);
 
       setTestResult(result);
       if (result.success) {
         notifications.show({
           title: 'Success',
-          message: `Connection successful! Found ${result.count || 0} logs in last 5 minutes.`,
+          message: `Connection successful! Found ${result.count || 0} logs in last ${result.timeWindowMinutes || timeWindow} minutes.`,
           color: 'green'
         });
       } else {
@@ -225,12 +223,20 @@ export default function LogSourceForm() {
             onChange={(e) => form.setFieldValue('enabled', e.currentTarget.checked ? 1 : 0)}
           />
 
-          <Group justify="space-between">
+          <Group justify="space-between" align="flex-end">
             <Group>
               <Button variant="subtle" onClick={() => navigate('/log-sources')}>
                 Cancel
               </Button>
-              <Button variant="light" onClick={handleTest} loading={testing}>
+              <NumberInput
+                label="Time Window (minutes)"
+                value={timeWindow}
+                onChange={(val) => setTimeWindow(Number(val) || 5)}
+                min={1}
+                max={60}
+                style={{ width: 150 }}
+              />
+              <Button variant="light" onClick={handleTest} loading={testing} style={{ marginTop: 25 }}>
                 Test & Preview Data
               </Button>
             </Group>
