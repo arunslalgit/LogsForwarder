@@ -2,9 +2,10 @@ import { useEffect, useState } from 'react';
 import { Container, Title, Button, Paper, TextInput, Select, Table, ActionIcon, Group, Text, Switch, Code, Divider, Alert } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import { useNavigate, useParams } from 'react-router-dom';
-import { IconPlus, IconTrash, IconArrowLeft, IconInfoCircle, IconCheck, IconX } from '@tabler/icons-react';
+import { IconPlus, IconTrash, IconArrowLeft, IconInfoCircle, IconCheck, IconX, IconWand } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
 import { api } from '../api/client';
+import { JsonPathPicker } from '../components/JsonPathPicker';
 import type { TagMapping, LogSource } from '../types';
 
 export default function TagMappings() {
@@ -15,6 +16,7 @@ export default function TagMappings() {
   const [extractedJSON, setExtractedJSON] = useState<any>(null);
   const [loadingSamples, setLoadingSamples] = useState(false);
   const [testResult, setTestResult] = useState<any>(null);
+  const [pickerOpened, setPickerOpened] = useState(false);
 
   const form = useForm({
     initialValues: {
@@ -152,6 +154,36 @@ export default function TagMappings() {
     }
   }
 
+  function handleJsonPathSelect(path: string, value: any) {
+    form.setFieldValue('json_path', path);
+
+    // Auto-suggest field name from path
+    const fieldName = path.split('.').pop()?.replace(/[\[\]$]/g, '') || '';
+    if (fieldName && !form.values.influx_tag_name) {
+      form.setFieldValue('influx_tag_name', fieldName.toLowerCase().replace(/[^a-z0-9_]/g, '_'));
+    }
+
+    // Auto-detect data type
+    const valueType = typeof value;
+    if (valueType === 'number') {
+      form.setFieldValue('data_type', Number.isInteger(value) ? 'integer' : 'float');
+      form.setFieldValue('is_field', 1); // Numbers are usually fields
+    } else if (valueType === 'boolean') {
+      form.setFieldValue('data_type', 'boolean');
+    } else {
+      form.setFieldValue('data_type', 'string');
+    }
+
+    setPickerOpened(false);
+    setTestResult(null);
+
+    notifications.show({
+      title: 'JSONPath Selected',
+      message: `Selected: ${path}`,
+      color: 'green'
+    });
+  }
+
   return (
     <Container size="lg">
       <Group justify="space-between" mb="lg">
@@ -207,10 +239,19 @@ export default function TagMappings() {
             />
             <Button
               variant="light"
+              color="violet"
+              leftSection={<IconWand size={16} />}
+              onClick={() => setPickerOpened(true)}
+              disabled={!extractedJSON}
+            >
+              Pick
+            </Button>
+            <Button
+              variant="light"
               onClick={handleTestJsonPath}
               disabled={!extractedJSON || !form.values.json_path}
             >
-              Test Path
+              Test
             </Button>
           </Group>
 
@@ -302,6 +343,13 @@ export default function TagMappings() {
           ))}
         </Table.Tbody>
       </Table>
+
+      <JsonPathPicker
+        opened={pickerOpened}
+        onClose={() => setPickerOpened(false)}
+        jsonData={extractedJSON}
+        onSelect={handleJsonPathSelect}
+      />
     </Container>
   );
 }

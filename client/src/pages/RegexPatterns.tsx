@@ -2,9 +2,10 @@ import { useEffect, useState } from 'react';
 import { Container, Title, Button, Paper, TextInput, Textarea, Table, ActionIcon, Group, Text, Code, Stack, Divider, Select } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import { useNavigate, useParams } from 'react-router-dom';
-import { IconTrash, IconArrowLeft, IconCheck, IconX } from '@tabler/icons-react';
+import { IconTrash, IconArrowLeft, IconCheck, IconX, IconWand } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
 import { api } from '../api/client';
+import { RegexHelper } from '../components/RegexHelper';
 import type { RegexPattern, LogSource } from '../types';
 
 export default function RegexPatterns() {
@@ -15,6 +16,7 @@ export default function RegexPatterns() {
   const [testResult, setTestResult] = useState<any>(null);
   const [sampleData, setSampleData] = useState<any[]>([]);
   const [loadingSamples, setLoadingSamples] = useState(false);
+  const [helperOpened, setHelperOpened] = useState(false);
 
   const form = useForm({
     initialValues: {
@@ -166,13 +168,24 @@ export default function RegexPatterns() {
         )}
 
         <form onSubmit={form.onSubmit(handleCreate)}>
-          <TextInput
-            label="Regex Pattern"
-            placeholder='\{"userId".*?\}'
-            required
-            mb="md"
-            {...form.getInputProps('pattern')}
-          />
+          <Group align="flex-end" mb="md">
+            <TextInput
+              label="Regex Pattern"
+              placeholder='\{"userId".*?\}'
+              required
+              style={{ flex: 1 }}
+              {...form.getInputProps('pattern')}
+            />
+            <Button
+              variant="light"
+              color="violet"
+              leftSection={<IconWand size={16} />}
+              onClick={() => setHelperOpened(true)}
+              disabled={!form.values.test_sample}
+            >
+              Build
+            </Button>
+          </Group>
           <TextInput
             label="Description"
             placeholder="Extract user activity JSON"
@@ -247,6 +260,20 @@ export default function RegexPatterns() {
           ))}
         </Table.Tbody>
       </Table>
+
+      <RegexHelper
+        opened={helperOpened}
+        onClose={() => setHelperOpened(false)}
+        sampleText={form.values.test_sample}
+        onApply={(pattern) => {
+          form.setFieldValue('pattern', pattern);
+          notifications.show({
+            title: 'Pattern Applied',
+            message: 'Regex pattern has been set. Test it to verify!',
+            color: 'green'
+          });
+        }}
+      />
     </Container>
   );
 }
