@@ -8,7 +8,7 @@ const routes = require('./routes');
 
 const app = express();
 const BASE_PATH = process.env.BASE_PATH || '';
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3003;
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));

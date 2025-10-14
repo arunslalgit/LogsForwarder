@@ -58,6 +58,10 @@ export const api = {
     body: JSON.stringify(data),
   }),
   deleteTagMapping: (id: number) => request<{ message: string }>(`/tag-mappings/${id}`, { method: 'DELETE' }),
+  testJsonPath: (data: { json_path: string; test_json: any }) => request<{ success: boolean; result?: any; type?: string; message?: string; error?: string }>('/tag-mappings/test', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  }),
 
   getInfluxConfigs: () => request<InfluxConfig[]>('/influx-configs'),
   getInfluxConfig: (id: number) => request<InfluxConfig>(`/influx-configs/${id}`),

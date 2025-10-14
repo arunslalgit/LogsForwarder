@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Container, Title, Button, Paper, TextInput, Select, Table, ActionIcon, Group, Text, Switch, Code, Divider, Alert } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import { useNavigate, useParams } from 'react-router-dom';
-import { IconPlus, IconTrash, IconArrowLeft, IconInfoCircle } from '@tabler/icons-react';
+import { IconPlus, IconTrash, IconArrowLeft, IconInfoCircle, IconCheck, IconX } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
 import { api } from '../api/client';
 import type { TagMapping, LogSource } from '../types';
@@ -14,6 +14,7 @@ export default function TagMappings() {
   const [logSource, setLogSource] = useState<LogSource | null>(null);
   const [extractedJSON, setExtractedJSON] = useState<any>(null);
   const [loadingSamples, setLoadingSamples] = useState(false);
+  const [testResult, setTestResult] = useState<any>(null);
 
   const form = useForm({
     initialValues: {
@@ -121,6 +122,36 @@ export default function TagMappings() {
     }
   }
 
+  async function handleTestJsonPath() {
+    if (!extractedJSON) {
+      notifications.show({
+        title: 'No Sample Data',
+        message: 'Please load sample JSON first',
+        color: 'yellow'
+      });
+      return;
+    }
+
+    if (!form.values.json_path) {
+      notifications.show({
+        title: 'Missing JSONPath',
+        message: 'Please enter a JSONPath expression',
+        color: 'yellow'
+      });
+      return;
+    }
+
+    try {
+      const result = await api.testJsonPath({
+        json_path: form.values.json_path,
+        test_json: extractedJSON
+      });
+      setTestResult(result);
+    } catch (error: any) {
+      notifications.show({ title: 'Error', message: error.message, color: 'red' });
+    }
+  }
+
   return (
     <Container size="lg">
       <Group justify="space-between" mb="lg">
@@ -166,13 +197,46 @@ export default function TagMappings() {
         )}
 
         <form onSubmit={form.onSubmit(handleCreate)}>
-          <TextInput
-            label="JSON Path"
-            placeholder="$.userId or $.response.statusCode"
-            required
-            mb="md"
-            {...form.getInputProps('json_path')}
-          />
+          <Group align="flex-end" mb="md">
+            <TextInput
+              label="JSON Path"
+              placeholder="$.userId or $.response.statusCode"
+              required
+              style={{ flex: 1 }}
+              {...form.getInputProps('json_path')}
+            />
+            <Button
+              variant="light"
+              onClick={handleTestJsonPath}
+              disabled={!extractedJSON || !form.values.json_path}
+            >
+              Test Path
+            </Button>
+          </Group>
+
+          {testResult && (
+            <Paper withBorder p="md" mb="md" bg={testResult.success ? 'green.0' : 'red.0'}>
+              <Group mb="xs">
+                {testResult.success ? <IconCheck color="green" /> : <IconX color="red" />}
+                <Text fw={500}>{testResult.message || (testResult.success ? 'Match Found' : 'No Match')}</Text>
+              </Group>
+              {testResult.success && testResult.result !== undefined && (
+                <>
+                  <Text size="sm" fw={500} mt="md">Extracted Value:</Text>
+                  <Code block mt="xs">
+                    {typeof testResult.result === 'object'
+                      ? JSON.stringify(testResult.result, null, 2)
+                      : String(testResult.result)
+                    }
+                  </Code>
+                  <Text size="xs" c="dimmed" mt="xs">Type: {testResult.type}</Text>
+                </>
+              )}
+              {testResult.error && (
+                <Text size="sm" c="red" mt="xs">{testResult.error}</Text>
+              )}
+            </Paper>
+          )}
           <TextInput
             label="InfluxDB Tag/Field Name"
             placeholder="user_id"
