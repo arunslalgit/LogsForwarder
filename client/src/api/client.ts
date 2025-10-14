@@ -90,4 +90,10 @@ export const api = {
   deleteJob: (id: number) => request<{ message: string }>(`/jobs/${id}`, { method: 'DELETE' }),
 
   getActivityLogs: (limit = 100, offset = 0) => request<ActivityLog[]>(`/activity-logs?limit=${limit}&offset=${offset}`),
+
+  previewInfluxLines: (data: { log_source_id: number; test_json: any; measurement_name?: string }) =>
+    request<{ success: boolean; lines?: string[]; tags_extracted?: number; fields_extracted?: number; extraction_errors?: string[]; error?: string }>('/tag-mappings/preview-influx', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
 };

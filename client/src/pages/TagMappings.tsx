@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Container, Title, Button, Paper, TextInput, Select, Table, ActionIcon, Group, Text, Switch, Code, Divider, Alert } from '@mantine/core';
+import { Container, Title, Button, Paper, TextInput, Select, Table, ActionIcon, Group, Text, Switch, Code, Divider, Alert, Badge } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import { useNavigate, useParams } from 'react-router-dom';
-import { IconPlus, IconTrash, IconArrowLeft, IconInfoCircle, IconCheck, IconX, IconWand } from '@tabler/icons-react';
+import { IconPlus, IconTrash, IconArrowLeft, IconInfoCircle, IconCheck, IconX, IconWand, IconDatabase } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
 import { api } from '../api/client';
 import { JsonPathPicker } from '../components/JsonPathPicker';
@@ -17,6 +17,7 @@ export default function TagMappings() {
   const [loadingSamples, setLoadingSamples] = useState(false);
   const [testResult, setTestResult] = useState<any>(null);
   const [pickerOpened, setPickerOpened] = useState(false);
+  const [influxPreview, setInfluxPreview] = useState<any>(null);
 
   const form = useForm({
     initialValues: {
@@ -53,6 +54,10 @@ export default function TagMappings() {
       notifications.show({ title: 'Success', message: 'Tag mapping created', color: 'green' });
       form.reset();
       loadData();
+      // Auto-refresh preview if we have sample JSON
+      if (extractedJSON) {
+        loadInfluxPreview();
+      }
     } catch (error: any) {
       notifications.show({ title: 'Error', message: error.message, color: 'red' });
     }
@@ -65,6 +70,10 @@ export default function TagMappings() {
       await api.deleteTagMapping(mappingId);
       notifications.show({ title: 'Success', message: 'Tag mapping deleted', color: 'green' });
       loadData();
+      // Auto-refresh preview if we have sample JSON
+      if (extractedJSON) {
+        loadInfluxPreview();
+      }
     } catch (error: any) {
       notifications.show({ title: 'Error', message: error.message, color: 'red' });
     }
@@ -110,6 +119,8 @@ export default function TagMappings() {
           message: 'JSON extracted from sample log',
           color: 'green'
         });
+        // Also load InfluxDB preview if mappings exist
+        await loadInfluxPreview(testResult.parsed);
       } else {
         notifications.show({
           title: 'Extraction Failed',
@@ -121,6 +132,30 @@ export default function TagMappings() {
       notifications.show({ title: 'Error', message: error.message, color: 'red' });
     } finally {
       setLoadingSamples(false);
+    }
+  }
+
+  async function loadInfluxPreview(jsonData?: any) {
+    const dataToUse = jsonData || extractedJSON;
+    if (!dataToUse) return;
+
+    try {
+      const result = await api.previewInfluxLines({
+        log_source_id: Number(id),
+        test_json: dataToUse,
+        measurement_name: 'application_logs'
+      });
+
+      setInfluxPreview(result);
+      if (!result.success) {
+        notifications.show({
+          title: 'Preview Failed',
+          message: result.error || 'Could not generate InfluxDB preview',
+          color: 'yellow'
+        });
+      }
+    } catch (error: any) {
+      notifications.show({ title: 'Error', message: error.message, color: 'red' });
     }
   }
 
@@ -343,6 +378,53 @@ export default function TagMappings() {
           ))}
         </Table.Tbody>
       </Table>
+
+      {influxPreview && influxPreview.success && (
+        <Paper shadow="sm" p="lg" mt="xl" withBorder>
+          <Group justify="space-between" mb="md">
+            <Group>
+              <IconDatabase size={20} />
+              <Title order={4}>InfluxDB Line Protocol Preview</Title>
+            </Group>
+            <Group>
+              <Badge color="blue" variant="light">
+                {influxPreview.tags_extracted || 0} Tags
+              </Badge>
+              <Badge color="green" variant="light">
+                {influxPreview.fields_extracted || 0} Fields
+              </Badge>
+            </Group>
+          </Group>
+
+          <Alert icon={<IconInfoCircle size={16} />} color="blue" mb="md">
+            This shows how your data will be formatted when sent to InfluxDB
+          </Alert>
+
+          {influxPreview.lines && influxPreview.lines.length > 0 && (
+            <>
+              <Text size="sm" fw={500} mb="xs">Sample Line Protocol:</Text>
+              {influxPreview.lines.map((line: string, idx: number) => (
+                <Paper key={idx} withBorder p="sm" mb="sm" bg="gray.0">
+                  <Code block style={{ fontSize: '11px', wordBreak: 'break-all', whiteSpace: 'pre-wrap' }}>
+                    {line}
+                  </Code>
+                </Paper>
+              ))}
+            </>
+          )}
+
+          {influxPreview.extraction_errors && influxPreview.extraction_errors.length > 0 && (
+            <>
+              <Divider my="md" />
+              <Alert icon={<IconInfoCircle size={16} />} color="yellow" title="Extraction Warnings">
+                {influxPreview.extraction_errors.map((error: string, idx: number) => (
+                  <Text key={idx} size="sm">{error}</Text>
+                ))}
+              </Alert>
+            </>
+          )}
+        </Paper>
+      )}
 
       <JsonPathPicker
         opened={pickerOpened}

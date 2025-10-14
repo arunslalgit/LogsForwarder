@@ -52,12 +52,6 @@ router.post('/test', (req, res) => {
     let parsed = null;
     let parseAttempts = [];
 
-    // Debug logging
-    console.log('=== REGEX TEST DEBUG ===');
-    console.log('Extracted length:', extracted.length);
-    console.log('First 100 chars:', extracted.substring(0, 100));
-    console.log('Char codes (first 20):', extracted.substring(0, 20).split('').map((c, i) => `${i}:'${c}'=${c.charCodeAt(0)}`).join(', '));
-
     // Try parsing as-is
     try {
       parsed = JSON.parse(extracted);
