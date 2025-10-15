@@ -6,6 +6,18 @@ import { notifications } from '@mantine/notifications';
 const QUERY_HISTORY_KEY = 'sqlite_explorer_query_history';
 const MAX_HISTORY_SIZE = 10;
 
+// Get BASE_URL for API calls (handles subpath deployments)
+function getBaseUrl() {
+  const pathname = window.location.pathname;
+  const segments = pathname.split('/').filter(Boolean);
+  const knownRoutes = ['log-sources', 'influx-configs', 'jobs', 'regex-patterns', 'tag-mappings', 'sqlite-explorer', 'dashboard'];
+  if (segments.length > 0 && !knownRoutes.includes(segments[0])) {
+    return `/${segments[0]}/api`;
+  }
+  return '/api';
+}
+const API_BASE_URL = getBaseUrl();
+
 interface QueryResult {
   results: any[];
   rowCount: number;
@@ -53,7 +65,7 @@ export default function SQLiteExplorer() {
 
   async function loadTables() {
     try {
-      const response = await fetch('/api/sqlite-explorer/tables');
+      const response = await fetch(`${API_BASE_URL}/sqlite-explorer/tables`);
       const data = await response.json();
       setTables(data);
     } catch (error: any) {
@@ -71,7 +83,7 @@ export default function SQLiteExplorer() {
     setQueryResult(null);
 
     try {
-      const response = await fetch('/api/sqlite-explorer/query', {
+      const response = await fetch(`${API_BASE_URL}/sqlite-explorer/query`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query: query.trim() })

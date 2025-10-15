@@ -3,21 +3,27 @@ const db = require('../db/queries');
 const { LogSourceFactory } = require('./logSourceFactory');
 const { LogProcessor } = require('./processor');
 const { InfluxClient } = require('./influxClient');
+const { getLogger } = require('../utils/logger');
 
 const activeTasks = new Map();
 
 function startScheduler() {
+  const logger = getLogger();
   console.log('Loading scheduled jobs...');
+  logger.info('Loading scheduled jobs...');
 
   const jobs = db.getEnabledJobs();
   console.log(`Found ${jobs.length} enabled jobs`);
+  logger.info(`Found ${jobs.length} enabled jobs`);
 
   for (const job of jobs) {
     try {
       scheduleJob(job);
       console.log(`✓ Scheduled job ${job.id}: ${job.cron_schedule}`);
+      logger.info(`Scheduled job`, { jobId: job.id, schedule: job.cron_schedule });
     } catch (error) {
       console.error(`Failed to schedule job ${job.id}:`, error.message);
+      logger.error(`Failed to schedule job`, { jobId: job.id, error: error.message });
     }
   }
 }
@@ -37,17 +43,21 @@ function scheduleJob(job) {
 }
 
 async function executeJob(job) {
+  const logger = getLogger();
   console.log(`Executing job ${job.id}...`);
+  logger.info(`Executing job`, { jobId: job.id });
 
   const logSource = db.getLogSource(job.log_source_id);
   if (!logSource || !logSource.enabled) {
     console.log(`Job ${job.id} skipped: log source disabled or not found`);
+    logger.warn(`Job skipped: log source disabled or not found`, { jobId: job.id });
     return;
   }
 
   const influxConfig = db.getInfluxConfig(job.influx_config_id);
   if (!influxConfig || !influxConfig.enabled) {
     console.log(`Job ${job.id} skipped: InfluxDB config disabled or not found`);
+    logger.warn(`Job skipped: InfluxDB config disabled or not found`, { jobId: job.id });
     return;
   }
 
@@ -103,6 +113,11 @@ async function executeJob(job) {
     }
 
     console.log(`Fetched ${logs.length} logs from ${logSource.source_type}`);
+    logger.info(`Fetched logs from source`, {
+      jobId: job.id,
+      sourceType: logSource.source_type,
+      logCount: logs.length
+    });
 
     let processed = 0;
     let failed = 0;
@@ -162,6 +177,12 @@ async function executeJob(job) {
     );
 
     console.log(`Job ${job.id} completed: ${processed} processed, ${failed} failed`);
+    logger.info(`Job completed`, {
+      jobId: job.id,
+      processed,
+      failed,
+      successRate: processed > 0 ? ((processed / (processed + failed)) * 100).toFixed(2) + '%' : '0%'
+    });
 
   } catch (error) {
     console.error(`Job ${job.id} error:`, error.message);

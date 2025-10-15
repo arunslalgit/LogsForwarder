@@ -1,6 +1,25 @@
 import type { LogSource, RegexPattern, TagMapping, InfluxConfig, Job, ActivityLog } from '../types';
 
-const BASE_URL = '/api';
+// Dynamically determine BASE_URL from the page's actual location
+// This allows the same build to work with any BASE_PATH at runtime
+// If app is served at /forwarder/, this returns /forwarder/api
+// If app is served at /, this returns /api
+function getBaseUrl() {
+  const pathname = window.location.pathname;
+  // Extract base path from pathname (everything before /api or first route segment)
+  // Examples: /forwarder/log-sources -> /forwarder, /log-sources -> '', /forwarder/ -> /forwarder
+  const segments = pathname.split('/').filter(Boolean);
+
+  // If first segment exists and isn't a known route, it's likely the base path
+  const knownRoutes = ['log-sources', 'influx-configs', 'jobs', 'regex-patterns', 'tag-mappings', 'sqlite-explorer', 'dashboard'];
+  if (segments.length > 0 && !knownRoutes.includes(segments[0])) {
+    return `/${segments[0]}/api`;
+  }
+
+  return '/api';
+}
+
+const BASE_URL = getBaseUrl();
 
 async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const response = await fetch(`${BASE_URL}${endpoint}`, {

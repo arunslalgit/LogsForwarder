@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db/queries');
-const jp = require('jsonpath');
+const { JSONPath } = require('jsonpath-plus');
 
 router.get('/log-source/:logSourceId', (req, res) => {
   try {
@@ -53,7 +53,7 @@ router.post('/test', (req, res) => {
     }
 
     try {
-      const result = jp.query(jsonData, json_path);
+      const result = JSONPath({ path: json_path, json: jsonData });
 
       if (result.length === 0) {
         return res.json({

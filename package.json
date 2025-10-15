@@ -3,19 +3,34 @@
   "version": "3.0.0",
   "description": "Multi-Source Log Forwarder to InfluxDB",
   "main": "server/index.js",
+  "bin": "server/index.js",
   "scripts": {
     "start": "node server/index.js",
     "dev": "node server/index.js",
     "build:frontend": "cd client && npm run build",
-    "build": "npm run build:frontend && pkg . --targets node18-win-x64 --output dist/log-forwarder.exe",
-    "pkg": "pkg . --targets node18-win-x64 --output dist/log-forwarder.exe"
+    "build": "npm run build:frontend && node build.js mac",
+    "build:all": "npm run build:frontend && node build.js mac linux windows",
+    "build:mac": "npm run build:frontend && node build.js mac",
+    "build:linux": "npm run build:frontend && node build.js linux",
+    "build:windows": "npm run build:frontend && node build.js windows"
   },
   "pkg": {
     "assets": [
       "client/dist/**/*",
-      "data.db"
+      "node_modules/axios/dist/node/**/*",
+      "node_modules/better-sqlite3/build/Release/better_sqlite3.node"
     ],
-    "outputPath": "dist"
+    "scripts": [
+      "server/**/*.js"
+    ],
+    "targets": [
+      "node18-macos-arm64",
+      "node18-macos-x64",
+      "node18-linux-x64",
+      "node18-win-x64"
+    ],
+    "outputPath": "dist",
+    "compress": "GZip"
   },
   "dependencies": {
     "axios": "^1.9.0",
@@ -23,13 +38,13 @@
     "cookie-parser": "^1.4.7",
     "express": "^5.1.0",
     "https-proxy-agent": "^7.0.6",
-    "jsonpath": "^1.1.1",
+    "jsonpath-plus": "^10.3.0",
     "lodash": "^4.17.21",
     "node-cron": "^4.0.7",
     "uuid": "^9.0.1"
   },
   "devDependencies": {
-    "pkg": "^4.3.8"
+    "pkg": "^5.8.1"
   },
   "engines": {
     "node": ">=18.0.0"

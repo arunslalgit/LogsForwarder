@@ -1,4 +1,4 @@
-const jp = require('jsonpath');
+const { JSONPath } = require('jsonpath-plus');
 
 class LogProcessor {
   constructor(regexPattern, tagMappings) {
@@ -118,7 +118,7 @@ class LogProcessor {
 
     for (const mapping of this.tagMappings) {
       try {
-        let value = jp.query(jsonContent, mapping.json_path)[0];
+        let value = JSONPath({ path: mapping.json_path, json: jsonContent })[0];
 
         if (value === undefined || value === null) continue;
 

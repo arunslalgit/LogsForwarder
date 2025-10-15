@@ -4,10 +4,16 @@ const { SCHEMA } = require('./schema');
 
 let db = null;
 
-function initDatabase() {
-  const dbPath = path.join(__dirname, '../../data.db');
+function initDatabase(rootDir) {
+  // If rootDir is provided, use it; otherwise default to dev location
+  const dbPath = rootDir
+    ? path.join(rootDir, 'data.db')
+    : path.join(__dirname, '../../data.db');
 
-  db = new Database(dbPath, { verbose: console.log });
+  console.log('Database path:', dbPath);
+
+  // Create database (will be created if it doesn't exist)
+  db = new Database(dbPath, { verbose: process.env.DEBUG ? console.log : null });
   db.pragma('foreign_keys = ON');
   db.exec(SCHEMA);
 
@@ -21,9 +27,12 @@ function initDatabase() {
       ('version', '3.0'),
       ('initialized_at', datetime('now'))
     `).run();
+    console.log('✓ Database initialized (first run)');
+  } else {
+    console.log('✓ Database connected (existing)');
   }
 
-  console.log('✓ Database initialized at', dbPath);
+  console.log('✓ Database ready at', dbPath);
   return db;
 }
 
