@@ -7,6 +7,8 @@ import RegexPatterns from './pages/RegexPatterns';
 import TagMappings from './pages/TagMappings';
 import InfluxConfigs from './pages/InfluxConfigs';
 import InfluxConfigForm from './pages/InfluxConfigForm';
+import InfluxExplorer from './pages/InfluxExplorer';
+import SQLiteExplorer from './pages/SQLiteExplorer';
 import Jobs from './pages/Jobs';
 import JobForm from './pages/JobForm';
 import ActivityLogs from './pages/ActivityLogs';
@@ -24,6 +26,8 @@ export default function App() {
         <Route path="/influx-configs" element={<InfluxConfigs />} />
         <Route path="/influx-configs/new" element={<InfluxConfigForm />} />
         <Route path="/influx-configs/:id/edit" element={<InfluxConfigForm />} />
+        <Route path="/influx-explorer" element={<InfluxExplorer />} />
+        <Route path="/sqlite-explorer" element={<SQLiteExplorer />} />
         <Route path="/jobs" element={<Jobs />} />
         <Route path="/jobs/new" element={<JobForm />} />
         <Route path="/jobs/:id/edit" element={<JobForm />} />

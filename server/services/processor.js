@@ -6,13 +6,90 @@ class LogProcessor {
     this.tagMappings = tagMappings || [];
   }
 
+  // Helper function to extract complete JSON with balanced braces
+  extractCompleteJSON(text, startIndex) {
+    let braceCount = 0;
+    let inString = false;
+    let escapeNext = false;
+
+    for (let i = startIndex; i < text.length; i++) {
+      const char = text[i];
+
+      if (escapeNext) {
+        escapeNext = false;
+        continue;
+      }
+
+      if (char === '\\') {
+        escapeNext = true;
+        continue;
+      }
+
+      if (char === '"' && !escapeNext) {
+        inString = !inString;
+        continue;
+      }
+
+      if (!inString) {
+        if (char === '{') {
+          braceCount++;
+        } else if (char === '}') {
+          braceCount--;
+          if (braceCount === 0) {
+            // Found the matching closing brace
+            return text.substring(startIndex, i + 1);
+          }
+        }
+      }
+    }
+
+    return null; // Unbalanced braces
+  }
+
   extractJSON(messageField) {
     if (!messageField) return null;
 
     const match = this.regex.exec(messageField);
     if (!match) return null;
 
-    let jsonString = match[0] || match[1];
+    // For multi-group patterns (timestamp + JSON), prioritize Group 2 for JSON extraction
+    // Group 1 is typically timestamp, Group 2 is typically JSON
+    let extracted;
+    if (match[2]) {
+      // Multiple groups: prefer group 2 for JSON extraction
+      extracted = match[2];
+
+      // If it starts with { or \{, always try to extract complete balanced JSON
+      const startsWithBrace = extracted.startsWith('{') || extracted.startsWith('\\{') || extracted.includes('{');
+      if (startsWithBrace) {
+        // Find where the JSON actually starts in the original text
+        const jsonStartIndex = match.index + match[0].indexOf(extracted);
+        const completeJSON = this.extractCompleteJSON(messageField, jsonStartIndex);
+        if (completeJSON) {
+          console.log(`Processor: Extracted complete JSON: ${completeJSON.length} chars (was ${extracted.length} chars)`);
+          extracted = completeJSON;
+        }
+      }
+    } else if (match[1]) {
+      // Single group pattern
+      extracted = match[1];
+
+      // If it starts with { or \{, try to extract complete balanced JSON
+      const startsWithBrace = extracted.startsWith('{') || extracted.startsWith('\\{') || extracted.includes('{');
+      if (startsWithBrace) {
+        const jsonStartIndex = match.index + match[0].indexOf(extracted);
+        const completeJSON = this.extractCompleteJSON(messageField, jsonStartIndex);
+        if (completeJSON) {
+          console.log(`Processor: Extracted complete JSON: ${completeJSON.length} chars (was ${extracted.length} chars)`);
+          extracted = completeJSON;
+        }
+      }
+    } else {
+      // No capture groups, use full match
+      extracted = match[0];
+    }
+
+    let jsonString = extracted;
 
     // Try parsing as-is
     try {

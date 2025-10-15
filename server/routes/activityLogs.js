@@ -14,4 +14,19 @@ router.get('/', (req, res) => {
   }
 });
 
+router.delete('/cleanup', (req, res) => {
+  try {
+    const days = parseInt(req.query.days) || 30;
+    const deleted = db.deleteOldActivityLogs(days);
+
+    res.json({
+      success: true,
+      deleted: deleted.changes,
+      message: `Deleted ${deleted.changes} activity logs older than ${days} days`
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 module.exports = router;

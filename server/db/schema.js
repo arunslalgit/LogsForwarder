@@ -92,6 +92,7 @@ CREATE TABLE IF NOT EXISTS activity_logs (
   job_id INTEGER,
   level TEXT CHECK(level IN ('info', 'warning', 'error')),
   message TEXT,
+  details TEXT,
   records_processed INTEGER DEFAULT 0,
   records_failed INTEGER DEFAULT 0,
   timestamp TEXT DEFAULT (datetime('now')),

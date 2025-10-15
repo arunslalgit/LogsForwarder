@@ -77,4 +77,5 @@ export interface ActivityLog {
   timestamp: string;
   log_source_name?: string;
   source_type?: string;
+  details?: string; // JSON string containing detailed error/failure information
 }

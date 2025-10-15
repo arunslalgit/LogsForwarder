@@ -7,6 +7,7 @@ import {
   IconClock,
   IconList,
   IconChartLine,
+  IconSearch,
 } from '@tabler/icons-react';
 import { ReactNode } from 'react';
 
@@ -23,6 +24,8 @@ export default function Layout({ children }: LayoutProps) {
     { icon: IconDashboard, label: 'Dashboard', path: '/' },
     { icon: IconDatabase, label: 'Log Sources', path: '/log-sources' },
     { icon: IconChartLine, label: 'InfluxDB Configs', path: '/influx-configs' },
+    { icon: IconSearch, label: 'InfluxDB Explorer', path: '/influx-explorer' },
+    { icon: IconDatabase, label: 'SQLite Explorer', path: '/sqlite-explorer' },
     { icon: IconClock, label: 'Jobs', path: '/jobs' },
     { icon: IconList, label: 'Activity Logs', path: '/activity-logs' },
   ];

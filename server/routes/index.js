@@ -7,6 +7,7 @@ router.use('/tag-mappings', require('./tagMappings'));
 router.use('/influx-configs', require('./influxConfigs'));
 router.use('/jobs', require('./jobs'));
 router.use('/activity-logs', require('./activityLogs'));
+router.use('/sqlite-explorer', require('./sqliteExplorer'));
 
 router.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });

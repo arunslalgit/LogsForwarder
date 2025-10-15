@@ -99,19 +99,25 @@ async function executeJob(job) {
         queryFilter.index
       );
     } else if (logSource.source_type === 'file') {
-      logs = await sourceClient.fetchLogs(null, queryStart, now, null);
+      logs = await sourceClient.fetchLogs(queryFilter, queryStart, now, null);
     }
 
     console.log(`Fetched ${logs.length} logs from ${logSource.source_type}`);
 
     let processed = 0;
     let failed = 0;
+    const failureDetails = [];
 
     for (const log of logs) {
       try {
         const jsonContent = processor.extractJSON(log.message);
         if (!jsonContent) {
           failed++;
+          failureDetails.push({
+            reason: 'JSON extraction failed',
+            log_message: log.message.substring(0, 500), // First 500 chars
+            timestamp: log.timestamp
+          });
           continue;
         }
 
@@ -121,25 +127,59 @@ async function executeJob(job) {
       } catch (error) {
         console.error('Error processing log:', error.message);
         failed++;
+        failureDetails.push({
+          reason: error.message,
+          log_message: log.message.substring(0, 500),
+          timestamp: log.timestamp,
+          stack: error.stack
+        });
       }
     }
 
     await influxClient.flush();
 
     db.updateJobRun(job.id, true);
+
+    // Include failure details if any failures occurred
+    const details = failed > 0 ? {
+      total_fetched: logs.length,
+      sample_failures: failureDetails.slice(0, 5), // First 5 failures
+      log_source: logSource.name,
+      influx_config: influxConfig.name,
+      query_window: {
+        start: queryStart.toISOString(),
+        end: now.toISOString()
+      }
+    } : null;
+
     db.logActivity(
       job.id,
       'info',
       `[${logSource.source_type.toUpperCase()}] Processed ${processed} logs, ${failed} failed`,
       processed,
-      failed
+      failed,
+      details
     );
 
     console.log(`Job ${job.id} completed: ${processed} processed, ${failed} failed`);
 
   } catch (error) {
     console.error(`Job ${job.id} error:`, error.message);
-    db.logActivity(job.id, 'error', error.message, 0, 0);
+
+    const errorDetails = {
+      error_type: error.name,
+      error_message: error.message,
+      stack_trace: error.stack,
+      job_config: {
+        log_source_id: job.log_source_id,
+        log_source_name: logSource?.name,
+        influx_config_id: job.influx_config_id,
+        influx_config_name: influxConfig?.name,
+        lookback_minutes: job.lookback_minutes || 5
+      }
+    };
+
+    db.logActivity(job.id, 'error', error.message, 0, 0, errorDetails);
   }
 }
 

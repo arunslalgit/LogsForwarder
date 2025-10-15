@@ -299,14 +299,17 @@ function getActivityLogs(limit = 100, offset = 0) {
   `).all(limit, offset);
 }
 
-function logActivity(jobId, level, message, recordsProcessed = 0, recordsFailed = 0) {
+function logActivity(jobId, level, message, recordsProcessed = 0, recordsFailed = 0, details = null) {
   const db = getDatabase();
   const stmt = db.prepare(`
-    INSERT INTO activity_logs (job_id, level, message, records_processed, records_failed)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO activity_logs (job_id, level, message, records_processed, records_failed, details)
+    VALUES (?, ?, ?, ?, ?, ?)
   `);
 
-  return stmt.run(jobId, level, message, recordsProcessed, recordsFailed);
+  // Convert details object to JSON string if provided
+  const detailsJson = details ? JSON.stringify(details) : null;
+
+  return stmt.run(jobId, level, message, recordsProcessed, recordsFailed, detailsJson);
 }
 
 function deleteOldActivityLogs(daysToKeep = 30) {

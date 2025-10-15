@@ -5,7 +5,7 @@ import { IconPlus, IconEdit, IconTrash, IconPlayerPlay } from '@tabler/icons-rea
 import { notifications } from '@mantine/notifications';
 import { api } from '../api/client';
 import type { Job } from '../types';
-import dayjs from 'dayjs';
+import { formatTableDate } from '../utils/dateFormat';
 
 export default function Jobs() {
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -101,7 +101,7 @@ export default function Jobs() {
                 <Text size="sm">{job.lookback_minutes || 5} min</Text>
               </Table.Td>
               <Table.Td>
-                {job.last_run ? dayjs(job.last_run).format('MMM DD HH:mm') : 'Never'}
+                {formatTableDate(job.last_run)}
               </Table.Td>
               <Table.Td>
                 <Badge color={job.enabled ? 'green' : 'gray'}>
