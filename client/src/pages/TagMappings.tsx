@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Container, Title, Button, Paper, TextInput, Select, Table, ActionIcon, Group, Text, Switch, Code, Divider, Alert, Badge } from '@mantine/core';
+import { Container, Title, Button, Paper, TextInput, Select, Table, ActionIcon, Group, Text, Switch, Code, Divider, Alert, Badge, NumberInput } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import { useNavigate, useParams } from 'react-router-dom';
-import { IconPlus, IconTrash, IconArrowLeft, IconInfoCircle, IconCheck, IconX, IconWand, IconDatabase } from '@tabler/icons-react';
+import { IconPlus, IconTrash, IconArrowLeft, IconInfoCircle, IconCheck, IconX, IconWand, IconDatabase, IconEdit, IconChevronRight } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
 import { api } from '../api/client';
 import { JsonPathPicker } from '../components/JsonPathPicker';
@@ -14,10 +14,18 @@ export default function TagMappings() {
   const [mappings, setMappings] = useState<TagMapping[]>([]);
   const [logSource, setLogSource] = useState<LogSource | null>(null);
   const [extractedJSON, setExtractedJSON] = useState<any>(null);
+  const [allExtractedSamples, setAllExtractedSamples] = useState<any[]>([]); // Store all extracted samples
+  const [extractedTimestamp, setExtractedTimestamp] = useState<string | null>(null);
   const [loadingSamples, setLoadingSamples] = useState(false);
   const [testResult, setTestResult] = useState<any>(null);
   const [pickerOpened, setPickerOpened] = useState(false);
   const [influxPreview, setInfluxPreview] = useState<any>(null);
+  const [previewSampleCount, setPreviewSampleCount] = useState(1); // How many samples to show in preview
+  const [timestampFormat, setTimestampFormat] = useState<'milliseconds' | 'seconds' | 'nanoseconds'>('nanoseconds');
+  const [measurementName, setMeasurementName] = useState('application_logs'); // Configurable measurement name
+  const [timeWindow, setTimeWindow] = useState(360); // Default to 6 hours
+  const [sampleLimit, setSampleLimit] = useState(50); // Default to 50 samples
+  const [totalLogsCount, setTotalLogsCount] = useState(0);
 
   const form = useForm({
     initialValues: {
@@ -94,37 +102,87 @@ export default function TagMappings() {
         return;
       }
 
-      // Get sample data from the log source
-      const result = await api.testLogSource(Number(id));
+      // Get sample data from the log source with configurable time window
+      const result = await api.testLogSource(Number(id), timeWindow, sampleLimit);
+      setTotalLogsCount(result.count || 0);
       if (!result.success || !result.samples || result.samples.length === 0) {
+        const mins = timeWindow;
+        const timeDesc = mins >= 1440
+          ? `${Math.floor(mins / 1440)} day(s)`
+          : mins >= 60
+            ? `${Math.floor(mins / 60)} hour(s)`
+            : `${mins} minute(s)`;
         notifications.show({
           title: 'No Data',
-          message: 'No logs found in the last 5 minutes',
+          message: `No logs found in the last ${timeDesc}`,
           color: 'yellow'
         });
         setLoadingSamples(false);
         return;
       }
 
-      // Test the regex pattern on the first sample
-      const testResult = await api.testRegex({
-        pattern: patterns[0].pattern,
-        test_sample: JSON.stringify(result.samples[0])
-      });
+      // Try each regex pattern until we find one that extracts valid JSON
+      // Process multiple samples (up to 10)
+      const samplesToProcess = result.samples.slice(0, Math.min(10, result.samples.length));
+      const extractedSamples: any[] = [];
+      let successfulPattern = null;
+      let firstTimestamp = null;
 
-      if (testResult.success && testResult.parsed) {
-        setExtractedJSON(testResult.parsed);
+      for (const pattern of patterns) {
+        let samplesExtracted = 0;
+
+        for (const sample of samplesToProcess) {
+          const testResult = await api.testRegex({
+            pattern: pattern.pattern,
+            test_sample: sample.message
+          });
+
+          if (testResult.success && testResult.parsed) {
+            const extractedData = testResult.parsed;
+
+            // Check if we have multiple capture groups (timestamp in group1, JSON in group2)
+            const captures = (testResult as any).captures;
+            if (captures && captures.group1) {
+              extractedData._timestamp = captures.group1;
+              if (!firstTimestamp) firstTimestamp = captures.group1;
+            }
+
+            extractedSamples.push({ ...extractedData });
+            samplesExtracted++;
+          }
+        }
+
+        // If we extracted at least one sample, use this pattern
+        if (samplesExtracted > 0) {
+          successfulPattern = pattern;
+          break;
+        }
+      }
+
+      if (extractedSamples.length > 0 && successfulPattern) {
+        // Store all samples
+        setAllExtractedSamples(extractedSamples);
+
+        // Set the first sample as the current one for JSONPath picker
+        setExtractedJSON(extractedSamples[0]);
+
+        if (firstTimestamp) {
+          setExtractedTimestamp(firstTimestamp);
+        }
+
+        const timestampInfo = firstTimestamp ? ` (with timestamp: ${firstTimestamp})` : '';
         notifications.show({
           title: 'Success',
-          message: 'JSON extracted from sample log',
+          message: `Extracted ${extractedSamples.length} sample(s) using pattern: "${successfulPattern.description || 'Untitled'}"${timestampInfo}`,
           color: 'green'
         });
-        // Also load InfluxDB preview if mappings exist
-        await loadInfluxPreview(testResult.parsed);
+
+        // Load InfluxDB preview with first sample
+        await loadInfluxPreview(extractedSamples.slice(0, previewSampleCount));
       } else {
         notifications.show({
-          title: 'Extraction Failed',
-          message: 'Could not extract JSON using the regex pattern',
+          title: 'No JSON Pattern Found',
+          message: `Tested ${patterns.length} pattern(s) but none extracted valid JSON. Recommended pattern: (\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\.\\d{3}).*?RIDE_DASHBOARD_RESPONSE\\s*:\\s*(\\{[\\s\\S]*?\\})`,
           color: 'red'
         });
       }
@@ -135,15 +193,18 @@ export default function TagMappings() {
     }
   }
 
-  async function loadInfluxPreview(jsonData?: any) {
-    const dataToUse = jsonData || extractedJSON;
+  async function loadInfluxPreview(jsonDataOrArray?: any | any[], customFormat?: 'milliseconds' | 'seconds' | 'nanoseconds') {
+    const dataToUse = jsonDataOrArray || (allExtractedSamples.length > 0 ? allExtractedSamples.slice(0, previewSampleCount) : extractedJSON);
     if (!dataToUse) return;
 
     try {
       const result = await api.previewInfluxLines({
         log_source_id: Number(id),
         test_json: dataToUse,
-        measurement_name: 'application_logs'
+        measurement_name: measurementName,
+        timestamp: extractedTimestamp || undefined,
+        timestamp_format: customFormat || timestampFormat,
+        sample_count: Array.isArray(dataToUse) ? dataToUse.length : 1
       });
 
       setInfluxPreview(result);
@@ -223,13 +284,33 @@ export default function TagMappings() {
     <Container size="lg">
       <Group justify="space-between" mb="lg">
         <div>
-          <Group mb="xs">
+          <Group mb="xs" gap="xs">
             <Button
               variant="subtle"
               leftSection={<IconArrowLeft size={16} />}
               onClick={() => navigate('/log-sources')}
             >
-              Back to Log Sources
+              Log Sources
+            </Button>
+            <IconChevronRight size={16} color="gray" />
+            <Button
+              variant="subtle"
+              size="xs"
+              leftSection={<IconWand size={14} />}
+              onClick={() => navigate(`/log-sources/${id}/regex`)}
+            >
+              Regex Patterns
+            </Button>
+            <IconChevronRight size={16} color="gray" />
+            <Text size="sm" fw={500}>Tag Mappings</Text>
+            <IconChevronRight size={16} color="gray" />
+            <Button
+              variant="subtle"
+              size="xs"
+              leftSection={<IconEdit size={14} />}
+              onClick={() => navigate(`/log-sources/${id}/edit`)}
+            >
+              Edit Source
             </Button>
           </Group>
           <Title order={2}>Tag Mappings</Title>
@@ -240,15 +321,48 @@ export default function TagMappings() {
       <Paper shadow="sm" p="lg" mb="xl">
         <Group justify="space-between" mb="md">
           <Title order={4}>Add New Mapping</Title>
-          <Button variant="light" size="sm" onClick={loadExtractedJSON} loading={loadingSamples}>
-            Load Sample JSON
-          </Button>
+          <Group>
+            <NumberInput
+              label="Time Window (min)"
+              value={timeWindow}
+              onChange={(val) => setTimeWindow(Number(val) || 360)}
+              min={1}
+              max={43200}
+              style={{ width: 150 }}
+            />
+            <NumberInput
+              label="Sample Limit"
+              value={sampleLimit}
+              onChange={(val) => setSampleLimit(Number(val) || 50)}
+              min={1}
+              max={1000}
+              style={{ width: 130 }}
+            />
+            <Button variant="light" size="sm" onClick={loadExtractedJSON} loading={loadingSamples} style={{ marginTop: 25 }}>
+              Load Sample JSON
+            </Button>
+          </Group>
         </Group>
 
         {extractedJSON && (
           <>
             <Alert icon={<IconInfoCircle size={16} />} title="Extracted JSON Sample" color="blue" mb="md">
-              Use JSONPath expressions to extract values from this JSON structure
+              <Group justify="space-between">
+                <Text size="sm">Use JSONPath expressions to extract values from this JSON structure</Text>
+                {totalLogsCount > 1 && (
+                  <Text size="sm" c="dimmed">
+                    {totalLogsCount} logs available (showing first match)
+                  </Text>
+                )}
+              </Group>
+              {extractedTimestamp && (
+                <Text size="sm" fw={500} mt="xs" c="teal">
+                  🕐 Extracted Timestamp: <Code>{extractedTimestamp}</Code>
+                  <Text size="xs" c="dimmed" component="span" ml="xs">
+                    (available as $_timestamp for mapping)
+                  </Text>
+                </Text>
+              )}
             </Alert>
             <Divider my="md" label="Sample Extracted JSON" labelPosition="center" />
             <Paper withBorder p="sm" mb="md" style={{ maxHeight: '300px', overflow: 'auto' }}>
@@ -400,9 +514,74 @@ export default function TagMappings() {
             This shows how your data will be formatted when sent to InfluxDB
           </Alert>
 
+          <TextInput
+            label="Measurement Name"
+            description="Configure the measurement name for preview (this is typically set in InfluxDB Config)"
+            placeholder="application_logs"
+            value={measurementName}
+            onChange={(e) => {
+              setMeasurementName(e.target.value);
+            }}
+            onBlur={() => loadInfluxPreview()}
+            mb="md"
+          />
+
+          {influxPreview.timestamp_info && (
+            <Paper withBorder p="md" mb="md" bg="teal.0">
+              <Group justify="space-between" align="flex-start">
+                <div style={{ flex: 1 }}>
+                  <Text size="sm" fw={500} mb="xs">Timestamp Information</Text>
+                  <Text size="xs" c="dimmed">
+                    Source: <Code>{influxPreview.timestamp_info.source === 'extracted' ? 'Extracted from log' : 'Current time (fallback)'}</Code>
+                  </Text>
+                  {influxPreview.timestamp_info.original_value !== 'none' && (
+                    <Text size="xs" c="dimmed">
+                      Original: <Code>{influxPreview.timestamp_info.original_value}</Code>
+                    </Text>
+                  )}
+                  <Text size="xs" c="dimmed">
+                    InfluxDB timestamp: <Code>{influxPreview.timestamp_info.influx_timestamp}</Code> ({influxPreview.timestamp_info.format})
+                  </Text>
+                </div>
+                <Select
+                  size="xs"
+                  label="Timestamp Format"
+                  value={timestampFormat}
+                  onChange={(value) => {
+                    const newFormat = value as 'milliseconds' | 'seconds' | 'nanoseconds';
+                    setTimestampFormat(newFormat);
+                    // Reload preview with the new format immediately
+                    loadInfluxPreview(undefined, newFormat);
+                  }}
+                  data={[
+                    { value: 'nanoseconds', label: 'Nanoseconds' },
+                    { value: 'milliseconds', label: 'Milliseconds' },
+                    { value: 'seconds', label: 'Seconds' }
+                  ]}
+                  style={{ minWidth: '150px' }}
+                />
+              </Group>
+            </Paper>
+          )}
+
           {influxPreview.lines && influxPreview.lines.length > 0 && (
             <>
-              <Text size="sm" fw={500} mb="xs">Sample Line Protocol:</Text>
+              <Group justify="space-between" mb="xs">
+                <Text size="sm" fw={500}>Sample Line Protocol{influxPreview.samples_processed > 1 ? ` (${influxPreview.samples_processed} samples)` : ''}:</Text>
+                {allExtractedSamples.length > previewSampleCount && (
+                  <Button
+                    size="xs"
+                    variant="subtle"
+                    onClick={() => {
+                      const newCount = Math.min(previewSampleCount + 3, allExtractedSamples.length, 10);
+                      setPreviewSampleCount(newCount);
+                      loadInfluxPreview(allExtractedSamples.slice(0, newCount));
+                    }}
+                  >
+                    Load More ({Math.min(allExtractedSamples.length - previewSampleCount, 3)} more available)
+                  </Button>
+                )}
+              </Group>
               {influxPreview.lines.map((line: string, idx: number) => (
                 <Paper key={idx} withBorder p="sm" mb="sm" bg="gray.0">
                   <Code block style={{ fontSize: '11px', wordBreak: 'break-all', whiteSpace: 'pre-wrap' }}>

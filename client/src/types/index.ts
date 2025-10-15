@@ -1,7 +1,7 @@
 export interface LogSource {
   id: number;
   name: string;
-  source_type: 'dynatrace' | 'splunk';
+  source_type: 'dynatrace' | 'splunk' | 'file';
   dynatrace_url?: string;
   dynatrace_token?: string;
   dynatrace_query_filter?: string;
@@ -9,6 +9,8 @@ export interface LogSource {
   splunk_token?: string;
   splunk_search_query?: string;
   splunk_index?: string;
+  file_path?: string;
+  file_search_query?: string;
   proxy_url?: string;
   proxy_username?: string;
   proxy_password?: string;

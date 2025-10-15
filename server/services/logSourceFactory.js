@@ -1,5 +1,6 @@
 const { DynatraceClient } = require('./dynatraceClient');
 const { SplunkClient } = require('./splunkClient');
+const { FileLogClient } = require('./fileLogClient');
 
 class LogSourceFactory {
   static createClient(logSource) {
@@ -30,6 +31,14 @@ class LogSourceFactory {
           proxyConfig
         );
 
+      case 'file':
+        if (!logSource.file_path) {
+          throw new Error('File path required');
+        }
+        return new FileLogClient({
+          file_path: logSource.file_path
+        });
+
       default:
         throw new Error(`Unsupported source type: ${logSource.source_type}`);
     }
@@ -45,6 +54,9 @@ class LogSourceFactory {
           searchQuery: logSource.splunk_search_query || '',
           index: logSource.splunk_index || null
         };
+
+      case 'file':
+        return logSource.file_search_query || null;
 
       default:
         return null;

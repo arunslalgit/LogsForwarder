@@ -3,7 +3,7 @@ const SCHEMA = `
 CREATE TABLE IF NOT EXISTS log_sources (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL UNIQUE,
-  source_type TEXT NOT NULL CHECK(source_type IN ('dynatrace', 'splunk')),
+  source_type TEXT NOT NULL CHECK(source_type IN ('dynatrace', 'splunk', 'file')),
 
   -- Dynatrace specific
   dynatrace_url TEXT,
@@ -15,6 +15,10 @@ CREATE TABLE IF NOT EXISTS log_sources (
   splunk_token TEXT,
   splunk_search_query TEXT,
   splunk_index TEXT,
+
+  -- File specific
+  file_path TEXT,
+  file_search_query TEXT,
 
   -- Proxy configuration (optional)
   proxy_url TEXT,

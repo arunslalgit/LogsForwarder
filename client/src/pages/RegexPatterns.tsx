@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Container, Title, Button, Paper, TextInput, Textarea, Table, ActionIcon, Group, Text, Code, Stack, Divider, Select } from '@mantine/core';
+import { Container, Title, Button, Paper, TextInput, Textarea, Table, ActionIcon, Group, Text, Code, Stack, Divider, Select, NumberInput, Alert } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import { useNavigate, useParams } from 'react-router-dom';
-import { IconTrash, IconArrowLeft, IconCheck, IconX, IconWand } from '@tabler/icons-react';
+import { IconTrash, IconArrowLeft, IconCheck, IconX, IconWand, IconInfoCircle, IconTag, IconEdit, IconChevronRight } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
 import { api } from '../api/client';
 import { RegexHelper } from '../components/RegexHelper';
@@ -17,6 +17,9 @@ export default function RegexPatterns() {
   const [sampleData, setSampleData] = useState<any[]>([]);
   const [loadingSamples, setLoadingSamples] = useState(false);
   const [helperOpened, setHelperOpened] = useState(false);
+  const [timeWindow, setTimeWindow] = useState(360); // Default to 6 hours
+  const [sampleLimit, setSampleLimit] = useState(50); // Default to 50 samples
+  const [totalLogsCount, setTotalLogsCount] = useState(0);
 
   const form = useForm({
     initialValues: {
@@ -43,21 +46,40 @@ export default function RegexPatterns() {
     }
   }
 
-  async function loadSampleData(timeWindowMinutes: number = 5) {
+  async function loadSampleData(timeWindowMinutes: number = 360) {
     setLoadingSamples(true);
     try {
-      const result = await api.testLogSource(Number(id), timeWindowMinutes);
+      const result = await api.testLogSource(Number(id), timeWindowMinutes, sampleLimit);
       if (result.success && result.samples) {
         setSampleData(result.samples);
+        setTotalLogsCount(result.count || 0);
+        const mins = result.timeWindowMinutes || timeWindowMinutes;
+        const timeDesc = mins >= 1440
+          ? `${Math.floor(mins / 1440)} day(s)`
+          : mins >= 60
+            ? `${Math.floor(mins / 60)} hour(s)`
+            : `${mins} minute(s)`;
+
+        const countMsg = result.count && result.count > result.samples.length
+          ? `Showing ${result.samples.length} of ${result.count} logs from last ${timeDesc}`
+          : `Loaded ${result.samples.length} sample log(s) from last ${timeDesc}`;
+
         notifications.show({
           title: 'Success',
-          message: `Loaded ${result.samples.length} sample log(s) from last ${result.timeWindowMinutes || timeWindowMinutes} minutes`,
+          message: countMsg,
           color: 'green'
         });
       } else {
+        setTotalLogsCount(0);
+        const mins = timeWindowMinutes;
+        const timeDesc = mins >= 1440
+          ? `${Math.floor(mins / 1440)} day(s)`
+          : mins >= 60
+            ? `${Math.floor(mins / 60)} hour(s)`
+            : `${mins} minute(s)`;
         notifications.show({
           title: 'No Data',
-          message: `No logs found in the last ${timeWindowMinutes} minutes`,
+          message: `No logs found in the last ${timeDesc}`,
           color: 'yellow'
         });
       }
@@ -111,13 +133,32 @@ export default function RegexPatterns() {
     <Container size="lg">
       <Group justify="space-between" mb="lg">
         <div>
-          <Group mb="xs">
+          <Group mb="xs" gap="xs">
             <Button
               variant="subtle"
               leftSection={<IconArrowLeft size={16} />}
               onClick={() => navigate('/log-sources')}
             >
-              Back to Log Sources
+              Log Sources
+            </Button>
+            <IconChevronRight size={16} color="gray" />
+            <Text size="sm" fw={500}>Regex Patterns</Text>
+            <IconChevronRight size={16} color="gray" />
+            <Button
+              variant="subtle"
+              size="xs"
+              leftSection={<IconTag size={14} />}
+              onClick={() => navigate(`/log-sources/${id}/tags`)}
+            >
+              Tag Mappings
+            </Button>
+            <Button
+              variant="subtle"
+              size="xs"
+              leftSection={<IconEdit size={14} />}
+              onClick={() => navigate(`/log-sources/${id}/edit`)}
+            >
+              Edit Source
             </Button>
           </Group>
           <Title order={2}>Regex Patterns</Title>
@@ -125,40 +166,78 @@ export default function RegexPatterns() {
         </div>
       </Group>
 
+      <Alert color="blue" icon={<IconInfoCircle size={16} />} mb="md">
+        <Text size="sm" fw={500} mb="xs">📋 Recommended: Combined Pattern (Timestamp + JSON)</Text>
+        <Text size="xs" mb="xs">
+          <strong>Best practice:</strong> Create ONE pattern with multiple capture groups to extract both timestamp and JSON:
+        </Text>
+        <Code block style={{ fontSize: '11px', marginBottom: '8px' }}>
+          {`(\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\.\\d{3}).*?RIDE_DASHBOARD_RESPONSE\\s*:\\s*(\\{[\\s\\S]*?\\})`}
+        </Code>
+        <Text size="xs" c="dimmed">
+          ☝️ This extracts: Group 1 = timestamp, Group 2 = JSON. The system will use Group 1 for InfluxDB timestamp and Group 2 for field mappings.
+        </Text>
+      </Alert>
+
       <Paper shadow="sm" p="lg" mb="xl">
         <Group justify="space-between" mb="md">
           <Title order={4}>Add New Pattern</Title>
-          <Button variant="light" size="sm" onClick={() => loadSampleData(5)} loading={loadingSamples}>
-            Load Sample Data
-          </Button>
+          <Group>
+            <NumberInput
+              label="Time Window (min)"
+              value={timeWindow}
+              onChange={(val) => setTimeWindow(Number(val) || 360)}
+              min={1}
+              max={43200}
+              style={{ width: 150 }}
+            />
+            <NumberInput
+              label="Sample Limit"
+              value={sampleLimit}
+              onChange={(val) => setSampleLimit(Number(val) || 50)}
+              min={1}
+              max={1000}
+              style={{ width: 130 }}
+            />
+            <Button variant="light" size="sm" onClick={() => loadSampleData(timeWindow)} loading={loadingSamples} style={{ marginTop: 25 }}>
+              Load Sample Data
+            </Button>
+          </Group>
         </Group>
 
         {sampleData.length > 0 && (
           <>
             <Divider my="md" label="Sample Logs from Source" labelPosition="center" />
-            <Text size="sm" c="dimmed" mb="sm">
-              Select a sample log to use for testing your regex pattern
-            </Text>
+            <Group justify="space-between" mb="sm">
+              <Text size="sm" c="dimmed">
+                Select a sample log to use for testing your regex pattern
+              </Text>
+              {totalLogsCount > sampleData.length && (
+                <Text size="sm" c="orange" fw={500}>
+                  Showing {sampleData.length} of {totalLogsCount} total logs. Increase sample limit to see more.
+                </Text>
+              )}
+            </Group>
             <Select
               placeholder="Select a sample log"
               data={sampleData.map((sample, idx) => ({
                 value: String(idx),
-                label: `Sample ${idx + 1}: ${JSON.stringify(sample).substring(0, 100)}...`
+                label: `Sample ${idx + 1}: ${sample.message.substring(0, 100)}...`
               }))}
               mb="md"
               onChange={(val) => {
                 if (val !== null) {
                   const sample = sampleData[Number(val)];
-                  form.setFieldValue('test_sample', JSON.stringify(sample));
+                  form.setFieldValue('test_sample', sample.message);
                 }
               }}
             />
             <Stack gap="xs" mb="md">
               {sampleData.slice(0, 3).map((sample, idx) => (
-                <Paper key={idx} withBorder p="xs" style={{ cursor: 'pointer' }} onClick={() => form.setFieldValue('test_sample', JSON.stringify(sample))}>
+                <Paper key={idx} withBorder p="xs" style={{ cursor: 'pointer' }} onClick={() => form.setFieldValue('test_sample', sample.message)}>
                   <Text size="xs" c="dimmed" mb={4}>Sample {idx + 1} (click to use)</Text>
                   <Code block style={{ fontSize: '10px', maxHeight: '60px', overflow: 'auto' }}>
-                    {JSON.stringify(sample, null, 2)}
+                    {sample.message}
                   </Code>
                 </Paper>
               ))}
@@ -213,15 +292,29 @@ export default function RegexPatterns() {
                 {testResult.success ? <IconCheck color="green" /> : <IconX color="red" />}
                 <Text fw={500}>{testResult.success ? 'Match Found' : 'No Match'}</Text>
               </Group>
+
+              {/* Show all capture groups if they exist */}
+              {(testResult as any).captures && Object.keys((testResult as any).captures).length > 0 && (
+                <>
+                  <Text size="sm" fw={500} mt="md">📦 Capture Groups:</Text>
+                  {Object.entries((testResult as any).captures).map(([key, value]) => (
+                    <div key={key}>
+                      <Text size="xs" fw={500} mt="sm" c="dimmed">{key.replace('group', 'Group ')}:</Text>
+                      <Code block mt="xs" style={{fontSize: '11px', maxHeight: '100px', overflow: 'auto'}}>{String(value)}</Code>
+                    </div>
+                  ))}
+                </>
+              )}
+
               {testResult.extracted && (
                 <>
-                  <Text size="sm" fw={500} mt="md">Extracted:</Text>
+                  <Text size="sm" fw={500} mt="md">Primary Extracted (Group 1):</Text>
                   <Code block mt="xs">{testResult.extracted}</Code>
                 </>
               )}
               {testResult.parsed && (
                 <>
-                  <Text size="sm" fw={500} mt="md">Parsed JSON:</Text>
+                  <Text size="sm" fw={500} mt="md">✅ Parsed JSON:</Text>
                   <Code block mt="xs">{JSON.stringify(testResult.parsed, null, 2)}</Code>
                 </>
               )}

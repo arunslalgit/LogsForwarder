@@ -89,9 +89,16 @@ export default function LogSourceForm() {
 
       setTestResult(result);
       if (result.success) {
+        const mins = result.timeWindowMinutes || timeWindow;
+        const timeDesc = mins >= 1440
+          ? `${Math.floor(mins / 1440)} day(s)`
+          : mins >= 60
+            ? `${Math.floor(mins / 60)} hour(s)`
+            : `${mins} minute(s)`;
+
         notifications.show({
           title: 'Success',
-          message: `Connection successful! Found ${result.count || 0} logs in last ${result.timeWindowMinutes || timeWindow} minutes.`,
+          message: `Connection successful! Found ${result.count || 0} logs in last ${timeDesc}.`,
           color: 'green'
         });
       } else {
@@ -127,6 +134,7 @@ export default function LogSourceForm() {
               data={[
                 { value: 'dynatrace', label: 'Dynatrace' },
                 { value: 'splunk', label: 'Splunk' },
+                { value: 'file', label: 'File (Local Log File)' },
               ]}
               required
               mb="md"
@@ -196,6 +204,31 @@ export default function LogSourceForm() {
             </>
           )}
 
+          {sourceType === 'file' && (
+            <>
+              <TextInput
+                label="Log File Path"
+                placeholder="/Users/arunlal/o11yControlCenter/DefaultRatingEngine.log"
+                required
+                mb="md"
+                description="Absolute path to the log file on this server"
+                {...form.getInputProps('file_path')}
+              />
+              <TextInput
+                label="Search Filter (Regex)"
+                placeholder="error|exception|critical"
+                mb="md"
+                description="Optional regex pattern to filter log lines (case-insensitive)"
+                {...form.getInputProps('file_search_query')}
+              />
+              <Alert color="blue" mb="md">
+                File source reads logs from a local file with timestamps. The file will be parsed line-by-line within the configured time window. Timestamps must be in format: YYYY-MM-DD HH:MM:SS.mmm
+                <br/>
+                <strong>Search Filter:</strong> Use regex to filter logs (e.g., "error|exception" to find errors, "userId.*123" to find specific user)
+              </Alert>
+            </>
+          )}
+
           <Title order={5} mt="xl" mb="md">Proxy Configuration (Optional)</Title>
           <TextInput
             label="Proxy URL"
@@ -233,8 +266,9 @@ export default function LogSourceForm() {
                 value={timeWindow}
                 onChange={(val) => setTimeWindow(Number(val) || 5)}
                 min={1}
-                max={60}
-                style={{ width: 150 }}
+                max={43200}
+                description="Up to 30 days (43200 min)"
+                style={{ width: 200 }}
               />
               <Button variant="light" onClick={handleTest} loading={testing} style={{ marginTop: 25 }}>
                 Test & Preview Data
@@ -269,7 +303,7 @@ export default function LogSourceForm() {
                       <Paper key={idx} withBorder p="sm" style={{ overflow: 'auto' }}>
                         <Text size="xs" c="dimmed" mb="xs">Sample {idx + 1}</Text>
                         <Code block style={{ fontSize: '11px' }}>
-                          {JSON.stringify(sample, null, 2)}
+                          {sample.message}
                         </Code>
                       </Paper>
                     ))}

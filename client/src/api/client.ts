@@ -31,11 +31,11 @@ export const api = {
     body: JSON.stringify(data),
   }),
   deleteLogSource: (id: number) => request<{ message: string }>(`/log-sources/${id}`, { method: 'DELETE' }),
-  testLogSource: (id: number, timeWindowMinutes?: number) => request<{ success: boolean; count?: number; samples?: any[]; error?: string; timeWindowMinutes?: number }>(`/log-sources/${id}/test`, {
+  testLogSource: (id: number, timeWindowMinutes?: number, sampleLimit?: number) => request<{ success: boolean; count?: number; samples?: any[]; samplesShown?: number; error?: string; timeWindowMinutes?: number }>(`/log-sources/${id}/test`, {
     method: 'POST',
-    body: JSON.stringify({ timeWindowMinutes }),
+    body: JSON.stringify({ timeWindowMinutes, sampleLimit }),
   }),
-  testLogSourceConfig: (data: Partial<LogSource> & { timeWindowMinutes?: number }) => request<{ success: boolean; count?: number; samples?: any[]; error?: string; timeWindowMinutes?: number }>('/log-sources/test-config', {
+  testLogSourceConfig: (data: Partial<LogSource> & { timeWindowMinutes?: number; sampleLimit?: number }) => request<{ success: boolean; count?: number; samples?: any[]; samplesShown?: number; error?: string; timeWindowMinutes?: number }>('/log-sources/test-config', {
     method: 'POST',
     body: JSON.stringify(data),
   }),
@@ -92,8 +92,8 @@ export const api = {
 
   getActivityLogs: (limit = 100, offset = 0) => request<ActivityLog[]>(`/activity-logs?limit=${limit}&offset=${offset}`),
 
-  previewInfluxLines: (data: { log_source_id: number; test_json: any; measurement_name?: string }) =>
-    request<{ success: boolean; lines?: string[]; tags_extracted?: number; fields_extracted?: number; extraction_errors?: string[]; error?: string }>('/tag-mappings/preview-influx', {
+  previewInfluxLines: (data: { log_source_id: number; test_json: any; measurement_name?: string; timestamp?: string; timestamp_format?: 'milliseconds' | 'seconds' | 'nanoseconds'; sample_count?: number }) =>
+    request<{ success: boolean; lines?: string[]; samples_processed?: number; tags_extracted?: number; fields_extracted?: number; extraction_errors?: string[]; timestamp_info?: any; error?: string }>('/tag-mappings/preview-influx', {
       method: 'POST',
       body: JSON.stringify(data),
     }),

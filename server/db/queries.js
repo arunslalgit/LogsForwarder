@@ -17,8 +17,9 @@ function createLogSource(data) {
     INSERT INTO log_sources (
       name, source_type, dynatrace_url, dynatrace_token, dynatrace_query_filter,
       splunk_url, splunk_token, splunk_search_query, splunk_index,
+      file_path, file_search_query,
       proxy_url, proxy_username, proxy_password, enabled
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const result = stmt.run(
@@ -31,6 +32,8 @@ function createLogSource(data) {
     data.splunk_token || null,
     data.splunk_search_query || null,
     data.splunk_index || null,
+    data.file_path || null,
+    data.file_search_query || null,
     data.proxy_url || null,
     data.proxy_username || null,
     data.proxy_password || null,
@@ -52,6 +55,8 @@ function updateLogSource(id, data) {
       splunk_token = COALESCE(?, splunk_token),
       splunk_search_query = COALESCE(?, splunk_search_query),
       splunk_index = COALESCE(?, splunk_index),
+      file_path = COALESCE(?, file_path),
+      file_search_query = COALESCE(?, file_search_query),
       proxy_url = COALESCE(?, proxy_url),
       proxy_username = COALESCE(?, proxy_username),
       proxy_password = COALESCE(?, proxy_password),
@@ -63,6 +68,7 @@ function updateLogSource(id, data) {
   return stmt.run(
     data.name, data.dynatrace_url, data.dynatrace_token, data.dynatrace_query_filter,
     data.splunk_url, data.splunk_token, data.splunk_search_query, data.splunk_index,
+    data.file_path, data.file_search_query,
     data.proxy_url, data.proxy_username, data.proxy_password,
     data.enabled, id
   );

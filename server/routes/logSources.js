@@ -28,7 +28,7 @@ router.post('/', (req, res) => {
   try {
     const { source_type } = req.body;
 
-    if (!source_type || !['dynatrace', 'splunk'].includes(source_type)) {
+    if (!source_type || !['dynatrace', 'splunk', 'file'].includes(source_type)) {
       return res.status(400).json({ error: 'Invalid source_type' });
     }
 
@@ -38,6 +38,10 @@ router.post('/', (req, res) => {
 
     if (source_type === 'splunk' && (!req.body.splunk_url || !req.body.splunk_token)) {
       return res.status(400).json({ error: 'Splunk URL and token required' });
+    }
+
+    if (source_type === 'file' && !req.body.file_path) {
+      return res.status(400).json({ error: 'File path required' });
     }
 
     const id = db.createLogSource(req.body);
@@ -76,6 +80,9 @@ router.post('/:id/test', async (req, res) => {
     const timeWindowMinutes = req.body.timeWindowMinutes || 5;
     const timeWindowMs = timeWindowMinutes * 60000;
 
+    // Get sample limit from request body (default 10, max 1000)
+    const sampleLimit = Math.min(Math.max(1, req.body.sampleLimit || 10), 1000);
+
     const client = LogSourceFactory.createClient(logSource);
     const query = LogSourceFactory.getQueryFilter(logSource);
 
@@ -87,16 +94,19 @@ router.post('/:id/test', async (req, res) => {
         new Date(),
         query.index
       );
+    } else if (logSource.source_type === 'file') {
+      logs = await client.fetchLogs(query, new Date(Date.now() - timeWindowMs), new Date(), null);
     } else {
       logs = await client.fetchLogs(query, new Date(Date.now() - timeWindowMs), new Date());
     }
 
-    // Return up to 10 sample logs
-    const samples = logs.slice(0, 10);
+    // Return up to requested sample limit
+    const samples = logs.slice(0, sampleLimit);
     res.json({
       success: true,
       count: logs.length,
       samples: samples,
+      samplesShown: samples.length,
       timeWindowMinutes
     });
   } catch (error) {
@@ -109,13 +119,16 @@ router.post('/test-config', async (req, res) => {
   try {
     const config = req.body;
 
-    if (!config.source_type || !['dynatrace', 'splunk'].includes(config.source_type)) {
+    if (!config.source_type || !['dynatrace', 'splunk', 'file'].includes(config.source_type)) {
       return res.status(400).json({ error: 'Invalid source_type' });
     }
 
     // Get time window from request body (in minutes, default 5)
     const timeWindowMinutes = config.timeWindowMinutes || 5;
     const timeWindowMs = timeWindowMinutes * 60000;
+
+    // Get sample limit from request body (default 10, max 1000)
+    const sampleLimit = Math.min(Math.max(1, config.sampleLimit || 10), 1000);
 
     const client = LogSourceFactory.createClient(config);
     const query = LogSourceFactory.getQueryFilter(config);
@@ -128,15 +141,18 @@ router.post('/test-config', async (req, res) => {
         new Date(),
         query.index
       );
+    } else if (config.source_type === 'file') {
+      logs = await client.fetchLogs(query, new Date(Date.now() - timeWindowMs), new Date(), null);
     } else {
       logs = await client.fetchLogs(query, new Date(Date.now() - timeWindowMs), new Date());
     }
 
-    const samples = logs.slice(0, 10);
+    const samples = logs.slice(0, sampleLimit);
     res.json({
       success: true,
       count: logs.length,
       samples: samples,
+      samplesShown: samples.length,
       timeWindowMinutes
     });
   } catch (error) {

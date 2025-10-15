@@ -89,7 +89,7 @@ router.post('/test', (req, res) => {
 // Preview InfluxDB line protocol with sample data
 router.post('/preview-influx', (req, res) => {
   try {
-    const { log_source_id, test_json, measurement_name } = req.body;
+    const { log_source_id, test_json, measurement_name, timestamp, timestamp_format, sample_count } = req.body;
 
     if (!log_source_id || !test_json) {
       return res.status(400).json({
@@ -98,15 +98,21 @@ router.post('/preview-influx', (req, res) => {
       });
     }
 
-    let jsonData;
+    // Support both single JSON object and array of samples
+    let jsonDataArray;
     try {
-      jsonData = typeof test_json === 'string' ? JSON.parse(test_json) : test_json;
+      const parsed = typeof test_json === 'string' ? JSON.parse(test_json) : test_json;
+      jsonDataArray = Array.isArray(parsed) ? parsed : [parsed];
     } catch (parseError) {
       return res.json({
         success: false,
         error: 'Invalid JSON: ' + parseError.message
       });
     }
+
+    // Limit number of samples to process (default: 1, max: 10)
+    const limit = Math.min(sample_count || 1, 10);
+    jsonDataArray = jsonDataArray.slice(0, limit);
 
     // Get all tag mappings for this log source
     const mappings = db.getTagMappings(log_source_id);
@@ -118,88 +124,165 @@ router.post('/preview-influx', (req, res) => {
       });
     }
 
-    // Extract values from JSON using JSONPath
-    const tags = {};
-    const fields = {};
-    const errors = [];
-
-    mappings.forEach(mapping => {
-      try {
-        const result = jp.query(jsonData, mapping.json_path);
-        if (result.length > 0) {
-          let value = result[0];
-
-          // Convert value based on data type
-          if (mapping.data_type === 'integer') {
-            value = parseInt(value, 10);
-          } else if (mapping.data_type === 'float') {
-            value = parseFloat(value);
-          } else if (mapping.data_type === 'boolean') {
-            value = Boolean(value);
-          } else {
-            value = String(value);
-          }
-
-          if (mapping.is_field) {
-            fields[mapping.influx_tag_name] = value;
-          } else {
-            tags[mapping.influx_tag_name] = value;
-          }
-        } else {
-          errors.push(`No value found for ${mapping.influx_tag_name} at path ${mapping.json_path}`);
-        }
-      } catch (error) {
-        errors.push(`Error extracting ${mapping.influx_tag_name}: ${error.message}`);
-      }
-    });
-
-    // Build InfluxDB line protocol
+    // Process each sample JSON
     const lines = [];
     const measurementToUse = measurement_name || 'application_logs';
+    const allErrors = [];
+    let totalTagsExtracted = 0;
+    let totalFieldsExtracted = 0;
 
-    // Build tag set
-    const tagSet = Object.entries(tags)
-      .map(([key, value]) => `${key}=${String(value).replace(/[ ,=]/g, '\\$&')}`)
-      .join(',');
+    jsonDataArray.forEach((jsonData, sampleIndex) => {
+      // Extract values from JSON using JSONPath
+      const tags = {};
+      const fields = {};
+      const errors = [];
 
-    // Build field set
-    const fieldSet = Object.entries(fields)
-      .map(([key, value]) => {
-        if (typeof value === 'string') {
-          return `${key}="${value.replace(/"/g, '\\"')}"`;
-        } else if (typeof value === 'boolean') {
-          return `${key}=${value}`;
-        } else {
-          return `${key}=${value}`;
+      mappings.forEach(mapping => {
+        try {
+          const result = jp.query(jsonData, mapping.json_path);
+          if (result.length > 0) {
+            let value = result[0];
+
+            // Convert value based on data type
+            if (mapping.data_type === 'integer') {
+              value = parseInt(value, 10);
+            } else if (mapping.data_type === 'float') {
+              value = parseFloat(value);
+            } else if (mapping.data_type === 'boolean') {
+              value = Boolean(value);
+            } else {
+              value = String(value);
+            }
+
+            if (mapping.is_field) {
+              fields[mapping.influx_tag_name] = value;
+            } else {
+              tags[mapping.influx_tag_name] = value;
+            }
+          } else {
+            errors.push(`Sample ${sampleIndex + 1}: No value found for ${mapping.influx_tag_name} at path ${mapping.json_path}`);
+          }
+        } catch (error) {
+          errors.push(`Sample ${sampleIndex + 1}: Error extracting ${mapping.influx_tag_name}: ${error.message}`);
         }
-      })
-      .join(',');
-
-    if (fieldSet === '' && tagSet === '') {
-      return res.json({
-        success: false,
-        error: 'No tags or fields could be extracted from the JSON',
-        extraction_errors: errors
       });
-    }
 
-    // Add at least one field if none exist (InfluxDB requirement)
-    const finalFieldSet = fieldSet || 'value=1';
+      // Build tag set
+      const tagSet = Object.entries(tags)
+        .map(([key, value]) => `${key}=${String(value).replace(/[ ,=]/g, '\\$&')}`)
+        .join(',');
 
-    // Construct line protocol
-    const timestamp = Date.now() * 1000000; // nanoseconds
-    const line = tagSet
-      ? `${measurementToUse},${tagSet} ${finalFieldSet} ${timestamp}`
-      : `${measurementToUse} ${finalFieldSet} ${timestamp}`;
+      // Build field set
+      const fieldSet = Object.entries(fields)
+        .map(([key, value]) => {
+          if (typeof value === 'string') {
+            return `${key}="${value.replace(/"/g, '\\"')}"`;
+          } else if (typeof value === 'boolean') {
+            return `${key}=${value}`;
+          } else {
+            return `${key}=${value}`;
+          }
+        })
+        .join(',');
 
-    lines.push(line);
+      if (fieldSet === '' && tagSet === '') {
+        allErrors.push(`Sample ${sampleIndex + 1}: No tags or fields could be extracted`);
+        allErrors.push(...errors);
+        return; // Skip this sample
+      }
 
+      // Add at least one field if none exist (InfluxDB requirement)
+      const finalFieldSet = fieldSet || 'value=1';
+
+      totalTagsExtracted += Object.keys(tags).length;
+      totalFieldsExtracted += Object.keys(fields).length;
+      allErrors.push(...errors);
+
+      // Handle timestamp conversion for this sample
+      // Check if jsonData has _timestamp field (from extraction), or use provided timestamp, or fallback to current time
+      const sampleTimestamp = jsonData._timestamp || timestamp;
+      let influxTimestamp;
+      let timestampSource = 'current_time';
+      let timestampValue = null;
+
+      if (sampleTimestamp) {
+        // User provided a timestamp or extracted from log - parse and convert
+        timestampSource = jsonData._timestamp ? 'extracted' : 'provided';
+        let parsedTime;
+
+        // Try to parse the timestamp string
+        if (typeof sampleTimestamp === 'string') {
+          // Handle common timestamp formats
+          if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(\.\d{3})?/.test(sampleTimestamp)) {
+            // ISO format or similar: 2025-10-14 13:02:11.175 or 2025-10-14T13:02:11.175Z
+            parsedTime = new Date(sampleTimestamp.replace(' ', 'T')).getTime();
+          } else if (/^\d+$/.test(sampleTimestamp)) {
+            // Already a number in string format
+            parsedTime = parseInt(sampleTimestamp, 10);
+          } else {
+            // Try general Date parsing
+            parsedTime = new Date(sampleTimestamp).getTime();
+          }
+        } else if (typeof sampleTimestamp === 'number') {
+          parsedTime = sampleTimestamp;
+        } else {
+          // Invalid timestamp, fall back to current time
+          parsedTime = Date.now();
+          timestampSource = 'current_time';
+        }
+
+        timestampValue = parsedTime;
+
+        // Convert to requested format (default: nanoseconds)
+        const format = timestamp_format || 'nanoseconds';
+        if (format === 'milliseconds') {
+          influxTimestamp = parsedTime; // Already in milliseconds
+        } else if (format === 'seconds') {
+          influxTimestamp = Math.floor(parsedTime / 1000);
+        } else if (format === 'nanoseconds') {
+          influxTimestamp = parsedTime * 1000000;
+        } else {
+          influxTimestamp = parsedTime * 1000000; // Default to nanoseconds
+        }
+      } else {
+        // No timestamp provided - use current time with small increment for each sample
+        const now = Date.now() + sampleIndex; // Add small offset for each sample
+        timestampValue = now;
+        const format = timestamp_format || 'nanoseconds';
+        if (format === 'milliseconds') {
+          influxTimestamp = now;
+        } else if (format === 'seconds') {
+          influxTimestamp = Math.floor(now / 1000);
+        } else if (format === 'nanoseconds') {
+          influxTimestamp = now * 1000000;
+        } else {
+          influxTimestamp = now * 1000000; // Default to nanoseconds
+        }
+      }
+
+      // Construct line protocol
+      const line = tagSet
+        ? `${measurementToUse},${tagSet} ${finalFieldSet} ${influxTimestamp}`
+        : `${measurementToUse} ${finalFieldSet} ${influxTimestamp}`;
+
+      lines.push(line);
+    }); // End forEach
+
+    // Return response after processing all samples
+    const firstTimestampSource = jsonDataArray[0]?._timestamp ? 'extracted' : (timestamp ? 'provided' : 'current_time');
     res.json({
       success: true,
       lines,
-      tags_extracted: Object.keys(tags).length,
-      fields_extracted: Object.keys(fields).length,
-      extraction_errors: errors.length > 0 ? errors : undefined
+      samples_processed: lines.length,
+      tags_extracted: totalTagsExtracted,
+      fields_extracted: totalFieldsExtracted,
+      timestamp_info: {
+        source: firstTimestampSource,
+        original_value: timestamp || jsonDataArray[0]?._timestamp || 'none',
+        format: timestamp_format || 'nanoseconds',
+        note: lines.length > 1 ? `Processed ${lines.length} samples` : 'Single sample processed'
+      },
+      extraction_errors: allErrors.length > 0 ? allErrors : undefined
     });
   } catch (error) {
     res.status(500).json({

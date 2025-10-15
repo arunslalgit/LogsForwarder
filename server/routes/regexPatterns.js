@@ -38,6 +38,46 @@ router.delete('/:id', (req, res) => {
   }
 });
 
+// Helper function to extract complete JSON with balanced braces
+function extractCompleteJSON(text, startIndex) {
+  let braceCount = 0;
+  let inString = false;
+  let escapeNext = false;
+
+  for (let i = startIndex; i < text.length; i++) {
+    const char = text[i];
+
+    if (escapeNext) {
+      escapeNext = false;
+      continue;
+    }
+
+    if (char === '\\') {
+      escapeNext = true;
+      continue;
+    }
+
+    if (char === '"' && !escapeNext) {
+      inString = !inString;
+      continue;
+    }
+
+    if (!inString) {
+      if (char === '{') {
+        braceCount++;
+      } else if (char === '}') {
+        braceCount--;
+        if (braceCount === 0) {
+          // Found the matching closing brace
+          return text.substring(startIndex, i + 1);
+        }
+      }
+    }
+  }
+
+  return null; // Unbalanced braces
+}
+
 router.post('/test', (req, res) => {
   try {
     const { pattern, test_sample } = req.body;
@@ -48,14 +88,60 @@ router.post('/test', (req, res) => {
       return res.json({ success: false, message: 'No match found' });
     }
 
-    let extracted = match[0];
+    // Extract all capture groups
+    const allCaptures = {};
+    for (let i = 1; i < match.length; i++) {
+      if (match[i] !== undefined) {
+        allCaptures[`group${i}`] = match[i];
+      }
+    }
+
+    // For multi-group patterns (timestamp + JSON), prioritize Group 2 for JSON extraction
+    // Group 1 is typically timestamp, Group 2 is typically JSON
+    let extracted;
+    if (match[2]) {
+      // Multiple groups: prefer group 2 for JSON extraction
+      extracted = match[2];
+
+      // If it starts with { or \{, always try to extract complete balanced JSON
+      const startsWithBrace = extracted.startsWith('{') || extracted.startsWith('\\{') || extracted.includes('{');
+      if (startsWithBrace) {
+        // Find where the JSON actually starts in the original text
+        const jsonStartIndex = match.index + match[0].indexOf(extracted);
+        const completeJSON = extractCompleteJSON(test_sample, jsonStartIndex);
+        if (completeJSON) {
+          console.log(`Extracted complete JSON: ${completeJSON.length} chars (was ${extracted.length} chars)`);
+          extracted = completeJSON;
+          allCaptures.group2 = completeJSON; // Update the capture
+        }
+      }
+    } else if (match[1]) {
+      // Single group: use group 1
+      extracted = match[1];
+
+      // Same check for single group
+      const startsWithBrace = extracted.startsWith('{') || extracted.startsWith('\\{') || extracted.includes('{');
+      if (startsWithBrace) {
+        const jsonStartIndex = match.index + match[0].indexOf(extracted);
+        const completeJSON = extractCompleteJSON(test_sample, jsonStartIndex);
+        if (completeJSON) {
+          console.log(`Extracted complete JSON: ${completeJSON.length} chars (was ${extracted.length} chars)`);
+          extracted = completeJSON;
+          allCaptures.group1 = completeJSON;
+        }
+      }
+    } else {
+      // No groups: use full match
+      extracted = match[0];
+    }
+
     let parsed = null;
     let parseAttempts = [];
 
     // Try parsing as-is
     try {
       parsed = JSON.parse(extracted);
-      return res.json({ success: true, extracted, parsed });
+      return res.json({ success: true, extracted, parsed, captures: allCaptures });
     } catch (e) {
       parseAttempts.push('Direct parse failed');
     }
@@ -68,6 +154,7 @@ router.post('/test', (req, res) => {
         success: true,
         extracted,
         parsed,
+        captures: allCaptures,
         message: 'Parsed after unescaping'
       });
     } catch (e) {
@@ -82,17 +169,20 @@ router.post('/test', (req, res) => {
         success: true,
         extracted,
         parsed,
+        captures: allCaptures,
         message: 'Parsed after double-unescaping'
       });
     } catch (e) {
       parseAttempts.push('Double unescape failed');
     }
 
-    // If all parsing attempts fail
+    // If all parsing attempts fail, still return success with extracted value
+    // (it might not be JSON, could be timestamp or other field)
     res.json({
       success: true,
       extracted,
       parsed: null,
+      captures: allCaptures,
       message: `Not valid JSON (tried: ${parseAttempts.join(', ')})`
     });
   } catch (error) {

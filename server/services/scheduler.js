@@ -98,6 +98,8 @@ async function executeJob(job) {
         now,
         queryFilter.index
       );
+    } else if (logSource.source_type === 'file') {
+      logs = await sourceClient.fetchLogs(null, queryStart, now, null);
     }
 
     console.log(`Fetched ${logs.length} logs from ${logSource.source_type}`);
