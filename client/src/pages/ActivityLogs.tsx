@@ -24,7 +24,13 @@ export default function ActivityLogs() {
       const data = await api.getActivityLogs(pageSize, (page - 1) * pageSize);
       setLogs(data);
     } catch (error: any) {
-      notifications.show({ title: 'Error', message: error.message, color: 'red' });
+      console.error('Failed to load activity logs:', error);
+      notifications.show({
+        title: 'Error Loading Logs',
+        message: error.message || 'Failed to fetch activity logs',
+        color: 'red'
+      });
+      setLogs([]); // Set empty array to prevent crash
     }
   }
 

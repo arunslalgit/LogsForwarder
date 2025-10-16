@@ -182,10 +182,27 @@ class LogProcessor {
       fields.value = 1;
     }
 
+    // Ensure timestamp is a Date object
+    let timestamp;
+    if (logEntry.timestamp) {
+      if (logEntry.timestamp instanceof Date) {
+        timestamp = logEntry.timestamp;
+      } else {
+        // Try to parse string/number timestamp
+        timestamp = new Date(logEntry.timestamp);
+        // If invalid date, use current time
+        if (isNaN(timestamp.getTime())) {
+          timestamp = new Date();
+        }
+      }
+    } else {
+      timestamp = new Date();
+    }
+
     return {
       tags,
       fields,
-      timestamp: logEntry.timestamp || new Date()
+      timestamp
     };
   }
 
