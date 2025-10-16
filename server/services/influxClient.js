@@ -14,7 +14,7 @@ class InfluxClient {
     } : null;
 
     // Store proxy configuration
-    this.proxyConfig = {};
+    this.proxyConfig = { proxy: false }; // Explicitly disable proxy by default (ignore env vars)
     if (config.proxy_url) {
       const proxyUrl = new URL(config.proxy_url);
       if (config.proxy_username && config.proxy_password) {
@@ -29,7 +29,9 @@ class InfluxClient {
       } else {
         this.proxyConfig.httpAgent = new HttpProxyAgent(proxyUrl.href);
       }
-      this.proxyConfig.proxy = false; // Disable axios built-in proxy
+      console.log(`InfluxDB client configured with proxy: ${proxyUrl.href}`);
+    } else {
+      console.log(`InfluxDB client configured WITHOUT proxy (direct connection)`);
     }
 
     this.batch = [];
