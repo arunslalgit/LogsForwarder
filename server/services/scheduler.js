@@ -76,12 +76,8 @@ async function executeJob(job) {
   try {
     const sourceClient = LogSourceFactory.createClient(logSource);
     const queryFilter = LogSourceFactory.getQueryFilter(logSource);
-    // Add timestamp_format from log source to influx config
-    const influxConfigWithTimestamp = {
-      ...influxConfig,
-      timestamp_format: logSource.timestamp_format || 'nanoseconds'
-    };
-    const influxClient = new InfluxClient(influxConfigWithTimestamp);
+    // InfluxDB config already has timestamp_format, just pass it through
+    const influxClient = new InfluxClient(influxConfig);
     const processor = new LogProcessor(regexPatterns[0].pattern, tagMappings);
 
     const lookbackMs = (job.lookback_minutes || 5) * 60000;

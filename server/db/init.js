@@ -78,14 +78,14 @@ function runMigrations(db) {
     console.error('Tag mappings migration error:', error.message);
   }
 
-  // Migration: Add timestamp_format column to log_sources
+  // Migration: Add timestamp_format column to influx_configs (moved from log_sources)
   try {
-    const logSourcesInfo = db.prepare("PRAGMA table_info(log_sources)").all();
-    const hasTimestampFormat = logSourcesInfo.some(col => col.name === 'timestamp_format');
+    const influxConfigsInfo = db.prepare("PRAGMA table_info(influx_configs)").all();
+    const hasTimestampFormat = influxConfigsInfo.some(col => col.name === 'timestamp_format');
 
     if (!hasTimestampFormat) {
-      console.log('Running migration: Adding timestamp_format column to log_sources');
-      db.prepare("ALTER TABLE log_sources ADD COLUMN timestamp_format TEXT DEFAULT 'nanoseconds'").run();
+      console.log('Running migration: Adding timestamp_format column to influx_configs');
+      db.prepare("ALTER TABLE influx_configs ADD COLUMN timestamp_format TEXT DEFAULT 'nanoseconds'").run();
       console.log('✓ Timestamp format migration completed');
     }
   } catch (error) {

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Container, Title, Paper, TextInput, NumberInput, Button, Switch, Group, PasswordInput, Alert } from '@mantine/core';
+import { Container, Title, Paper, TextInput, NumberInput, Button, Switch, Group, PasswordInput, Alert, Select } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import { useNavigate, useParams } from 'react-router-dom';
 import { notifications } from '@mantine/notifications';
@@ -26,6 +26,7 @@ export default function InfluxConfigForm() {
       proxy_url: '',
       proxy_username: '',
       proxy_password: '',
+      timestamp_format: 'nanoseconds',
       enabled: 1,
     },
     validate: {
@@ -190,6 +191,19 @@ export default function InfluxConfigForm() {
             placeholder="••••••••"
             mb="md"
             {...form.getInputProps('proxy_password')}
+          />
+
+          <Title order={5} mt="xl" mb="md">Timestamp Configuration</Title>
+          <Select
+            label="Timestamp Precision"
+            description="Choose the precision for timestamps written to this InfluxDB database"
+            data={[
+              { value: 'nanoseconds', label: 'Nanoseconds (ns) - Default' },
+              { value: 'milliseconds', label: 'Milliseconds (ms)' },
+              { value: 'seconds', label: 'Seconds (s)' }
+            ]}
+            mb="md"
+            {...form.getInputProps('timestamp_format')}
           />
 
           <Switch
