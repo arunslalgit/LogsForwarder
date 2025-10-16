@@ -106,6 +106,15 @@ CREATE TABLE IF NOT EXISTS app_settings (
   updated_at TEXT DEFAULT (datetime('now'))
 );
 
+-- Admin Users (Authentication)
+CREATE TABLE IF NOT EXISTS admin_users (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  username TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_activity_logs_timestamp ON activity_logs(timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_jobs_enabled ON jobs(enabled);

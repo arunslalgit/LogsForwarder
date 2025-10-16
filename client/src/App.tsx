@@ -1,5 +1,8 @@
-import { Routes, Route } from 'react-router-dom';
+import { Routes, Route, Navigate } from 'react-router-dom';
+import { useAuth } from './context/AuthContext';
 import Layout from './components/Layout';
+import Login from './pages/Login';
+import ChangePassword from './pages/ChangePassword';
 import Dashboard from './pages/Dashboard';
 import LogSources from './pages/LogSources';
 import LogSourceForm from './pages/LogSourceForm';
@@ -13,10 +16,28 @@ import Jobs from './pages/Jobs';
 import JobForm from './pages/JobForm';
 import ActivityLogs from './pages/ActivityLogs';
 
+
 export default function App() {
+  const { user } = useAuth();
+
+  if (user === null && window.location.pathname !== '/login') {
+    return <Login />;
+  }
+
+  if (!user) {
+    return (
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route path="*" element={<Navigate to="/login" replace />} />
+      </Routes>
+    );
+  }
+
   return (
     <Layout>
       <Routes>
+        <Route path="/login" element={<Navigate to="/" replace />} />
+        <Route path="/change-password" element={<ChangePassword />} />
         <Route path="/" element={<Dashboard />} />
         <Route path="/log-sources" element={<LogSources />} />
         <Route path="/log-sources/new" element={<LogSourceForm />} />

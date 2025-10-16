@@ -1,5 +1,6 @@
 const Database = require('better-sqlite3');
 const path = require('path');
+const bcrypt = require('bcryptjs');
 const { SCHEMA } = require('./schema');
 
 let db = null;
@@ -32,6 +33,9 @@ function initDatabase(rootDir) {
     console.log('✓ Database connected (existing)');
   }
 
+  // Ensure default admin user exists
+  ensureAdminUser(db);
+
   console.log('✓ Database ready at', dbPath);
   return db;
 }
@@ -49,6 +53,24 @@ function runMigrations(db) {
     }
   } catch (error) {
     console.error('Migration error:', error.message);
+  }
+}
+
+function ensureAdminUser(db) {
+  try {
+    const adminCheck = db.prepare('SELECT COUNT(*) as count FROM admin_users WHERE username = ?').get('admin');
+
+    if (adminCheck.count === 0) {
+      // Create default admin user with password GPRIDE2255
+      const passwordHash = bcrypt.hashSync('GPRIDE2255', 10);
+      db.prepare(`
+        INSERT INTO admin_users (username, password_hash)
+        VALUES (?, ?)
+      `).run('admin', passwordHash);
+      console.log('✓ Default admin user created (username: admin, password: GPRIDE2255)');
+    }
+  } catch (error) {
+    console.error('Error ensuring admin user:', error.message);
   }
 }
 
