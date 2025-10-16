@@ -17,7 +17,7 @@ export default function RegexPatterns() {
   const [sampleData, setSampleData] = useState<any[]>([]);
   const [loadingSamples, setLoadingSamples] = useState(false);
   const [helperOpened, setHelperOpened] = useState(false);
-  const [timeWindow, setTimeWindow] = useState(360); // Default to 6 hours
+  const [timeWindow, setTimeWindow] = useState(5); // Default to 5 minutes
   const [sampleLimit, setSampleLimit] = useState(50); // Default to 50 samples
   const [totalLogsCount, setTotalLogsCount] = useState(0);
 
@@ -46,7 +46,7 @@ export default function RegexPatterns() {
     }
   }
 
-  async function loadSampleData(timeWindowMinutes: number = 360) {
+  async function loadSampleData(timeWindowMinutes: number = 5) {
     setLoadingSamples(true);
     try {
       const result = await api.testLogSource(Number(id), timeWindowMinutes, sampleLimit);
@@ -186,7 +186,7 @@ export default function RegexPatterns() {
             <NumberInput
               label="Time Window (min)"
               value={timeWindow}
-              onChange={(val) => setTimeWindow(Number(val) || 360)}
+              onChange={(val) => setTimeWindow(Number(val) || 5)}
               min={1}
               max={43200}
               style={{ width: 150 }}
@@ -306,7 +306,8 @@ export default function RegexPatterns() {
                 </>
               )}
 
-              {testResult.extracted && (
+              {/* Only show Primary Extracted if no captures were shown */}
+              {testResult.extracted && !((testResult as any).captures && Object.keys((testResult as any).captures).length > 0) && (
                 <>
                   <Text size="sm" fw={500} mt="md">Primary Extracted (Group 1):</Text>
                   <Code block mt="xs">{testResult.extracted}</Code>

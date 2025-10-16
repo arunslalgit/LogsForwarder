@@ -1,14 +1,17 @@
 import { useEffect, useState } from 'react';
-import { Container, Title, Paper, TextInput, NumberInput, Button, Switch, Group, PasswordInput } from '@mantine/core';
+import { Container, Title, Paper, TextInput, NumberInput, Button, Switch, Group, PasswordInput, Alert } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import { useNavigate, useParams } from 'react-router-dom';
 import { notifications } from '@mantine/notifications';
+import { IconPlugConnected, IconAlertCircle, IconCheck } from '@tabler/icons-react';
 import { api } from '../api/client';
 
 export default function InfluxConfigForm() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
+  const [testingConnection, setTestingConnection] = useState(false);
+  const [connectionTestResult, setConnectionTestResult] = useState<any>(null);
 
   const form = useForm({
     initialValues: {
@@ -65,6 +68,39 @@ export default function InfluxConfigForm() {
       notifications.show({ title: 'Error', message: error.message, color: 'red' });
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleTestConnection() {
+    setTestingConnection(true);
+    setConnectionTestResult(null);
+    try {
+      const result = await api.testInfluxConnection(form.values);
+      setConnectionTestResult(result);
+      if (result.success) {
+        notifications.show({
+          title: 'Success',
+          message: result.message || 'Connected successfully',
+          color: 'green'
+        });
+      } else if (result.warning) {
+        notifications.show({
+          title: 'Warning',
+          message: result.message || result.error,
+          color: 'yellow'
+        });
+      } else {
+        notifications.show({
+          title: 'Connection Failed',
+          message: result.error || 'Failed to connect',
+          color: 'red'
+        });
+      }
+    } catch (error: any) {
+      setConnectionTestResult({ success: false, error: error.message });
+      notifications.show({ title: 'Error', message: error.message, color: 'red' });
+    } finally {
+      setTestingConnection(false);
     }
   }
 
@@ -162,6 +198,34 @@ export default function InfluxConfigForm() {
             checked={form.values.enabled === 1}
             onChange={(e) => form.setFieldValue('enabled', e.currentTarget.checked ? 1 : 0)}
           />
+
+          <Button
+            fullWidth
+            variant="light"
+            leftSection={<IconPlugConnected size={16} />}
+            onClick={handleTestConnection}
+            loading={testingConnection}
+            mb="md"
+            disabled={!form.values.url || !form.values.database}
+          >
+            Test Connection
+          </Button>
+
+          {connectionTestResult && (
+            <Alert
+              icon={connectionTestResult.success ? <IconCheck size={16} /> : <IconAlertCircle size={16} />}
+              title={connectionTestResult.success ? 'Connection Successful' : 'Connection Failed'}
+              color={connectionTestResult.success ? 'green' : connectionTestResult.warning ? 'yellow' : 'red'}
+              mb="md"
+            >
+              {connectionTestResult.message || connectionTestResult.error}
+              {connectionTestResult.influxVersion && (
+                <div style={{marginTop: 4, fontSize: '0.85em', opacity: 0.8}}>
+                  InfluxDB Version: {connectionTestResult.influxVersion}
+                </div>
+              )}
+            </Alert>
+          )}
 
           <Group justify="flex-end">
             <Button variant="subtle" onClick={() => navigate('/influx-configs')}>

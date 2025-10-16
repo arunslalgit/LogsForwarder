@@ -96,6 +96,10 @@ export const api = {
     body: JSON.stringify(data),
   }),
   deleteInfluxConfig: (id: number) => request<{ message: string }>(`/influx-configs/${id}`, { method: 'DELETE' }),
+  testInfluxConnection: (data: Partial<InfluxConfig>) => request<{ success: boolean; message?: string; error?: string; warning?: boolean; influxVersion?: string; databaseExists?: boolean }>('/influx-configs/test-connection', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  }),
 
   getJobs: () => request<Job[]>('/jobs'),
   createJob: (data: Partial<Job>) => request<{ id: number; message: string }>('/jobs', {

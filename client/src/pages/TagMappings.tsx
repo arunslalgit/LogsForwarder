@@ -23,7 +23,7 @@ export default function TagMappings() {
   const [previewSampleCount, setPreviewSampleCount] = useState(1); // How many samples to show in preview
   const [timestampFormat, setTimestampFormat] = useState<'milliseconds' | 'seconds' | 'nanoseconds'>('nanoseconds');
   const [measurementName, setMeasurementName] = useState('application_logs'); // Configurable measurement name
-  const [timeWindow, setTimeWindow] = useState(360); // Default to 6 hours
+  const [timeWindow, setTimeWindow] = useState(5); // Default to 5 minutes
   const [sampleLimit, setSampleLimit] = useState(50); // Default to 50 samples
   const [totalLogsCount, setTotalLogsCount] = useState(0);
 
@@ -325,7 +325,7 @@ export default function TagMappings() {
             <NumberInput
               label="Time Window (min)"
               value={timeWindow}
-              onChange={(val) => setTimeWindow(Number(val) || 360)}
+              onChange={(val) => setTimeWindow(Number(val) || 5)}
               min={1}
               max={43200}
               style={{ width: 150 }}

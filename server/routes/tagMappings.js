@@ -139,7 +139,7 @@ router.post('/preview-influx', (req, res) => {
 
       mappings.forEach(mapping => {
         try {
-          const result = jp.query(jsonData, mapping.json_path);
+          const result = JSONPath({ path: mapping.json_path, json: jsonData });
           if (result.length > 0) {
             let value = result[0];
 
