@@ -124,16 +124,38 @@ export default function TagMappings() {
     }
 
     try {
-      const regex = new RegExp(form.values.transform_regex, 'g');
       const originalValue = String(testResult.result);
-      const transformedValue = originalValue.replace(regex, '');
+      const regex = new RegExp(form.values.transform_regex);
+      const match = originalValue.match(regex);
 
-      setRegexTestResult({
-        success: true,
-        original: originalValue,
-        transformed: transformedValue,
-        removed: originalValue.length - transformedValue.length
-      });
+      if (match) {
+        let transformedValue;
+        let mode;
+
+        // If there are capture groups, use the first capture group
+        if (match.length > 1 && match[1] !== undefined) {
+          transformedValue = match[1];
+          mode = 'extract';
+        } else {
+          // No capture groups - remove the matched pattern
+          transformedValue = originalValue.replace(new RegExp(form.values.transform_regex, 'g'), '');
+          mode = 'remove';
+        }
+
+        setRegexTestResult({
+          success: true,
+          original: originalValue,
+          transformed: transformedValue,
+          mode: mode,
+          matched: match[0],
+          removed: originalValue.length - transformedValue.length
+        });
+      } else {
+        setRegexTestResult({
+          success: false,
+          error: 'Pattern did not match the value'
+        });
+      }
     } catch (error: any) {
       setRegexTestResult({
         success: false,
@@ -500,12 +522,36 @@ export default function TagMappings() {
                 </Button>
               </Group>
 
+              {testResult && (
+                <Paper withBorder p="md" mb="md" bg={testResult.success ? 'green.0' : 'red.0'}>
+                  <Group mb="xs">
+                    {testResult.success ? <IconCheck color="green" /> : <IconX color="red" />}
+                    <Text fw={500}>{testResult.message || (testResult.success ? 'Match Found' : 'No Match')}</Text>
+                  </Group>
+                  {testResult.success && testResult.result !== undefined && (
+                    <>
+                      <Text size="sm" fw={500} mt="md">Extracted Value:</Text>
+                      <Code block mt="xs">
+                        {typeof testResult.result === 'object'
+                          ? JSON.stringify(testResult.result, null, 2)
+                          : String(testResult.result)
+                        }
+                      </Code>
+                      <Text size="xs" c="dimmed" mt="xs">Type: {testResult.type}</Text>
+                    </>
+                  )}
+                  {testResult.error && (
+                    <Text size="sm" c="red" mt="xs">{testResult.error}</Text>
+                  )}
+                </Paper>
+              )}
+
               <Group align="flex-end" mb="md">
                 <TextInput
                   label="Transform Regex (Optional)"
-                  placeholder="[0-9a-f]{8}-[0-9a-f]{4}-.* (removes UUIDs)"
+                  placeholder="^([A-Za-z]+)-.* or -.*$ (extract or remove)"
                   style={{ flex: 1 }}
-                  description="Use regex to remove variable parts (IDs, timestamps) to control cardinality. The matched pattern will be removed from the value."
+                  description="With capture group (parentheses): extracts only captured part. Without: removes matched pattern. Example: ^([A-Za-z]+)-.* keeps first word."
                   {...form.getInputProps('transform_regex')}
                 />
                 <Button
@@ -525,12 +571,25 @@ export default function TagMappings() {
                   </Group>
                   {regexTestResult.success ? (
                     <>
-                      <Text size="sm" fw={500} mt="md">Original Value:</Text>
+                      <Text size="xs" c="dimmed" mb="md">
+                        Mode: <strong>{regexTestResult.mode === 'extract' ? 'Extract (using capture group)' : 'Remove (no capture group)'}</strong>
+                      </Text>
+                      <Text size="sm" fw={500} mt="xs">Original Value:</Text>
                       <Code block mt="xs">{regexTestResult.original}</Code>
-                      <Text size="sm" fw={500} mt="md">After Transform:</Text>
-                      <Code block mt="xs">{regexTestResult.transformed}</Code>
+                      {regexTestResult.mode === 'extract' && (
+                        <>
+                          <Text size="sm" fw={500} mt="md">Pattern Matched:</Text>
+                          <Code block mt="xs">{regexTestResult.matched}</Code>
+                        </>
+                      )}
+                      <Text size="sm" fw={500} mt="md">Result (what will be saved):</Text>
+                      <Code block mt="xs" style={{ backgroundColor: '#d3f9d8', fontWeight: 600 }}>
+                        {regexTestResult.transformed}
+                      </Code>
                       <Text size="xs" c="dimmed" mt="xs">
-                        Removed {regexTestResult.removed} character(s)
+                        {regexTestResult.mode === 'extract'
+                          ? `Extracted ${regexTestResult.transformed.length} character(s) from capture group`
+                          : `Removed ${regexTestResult.removed} character(s)`}
                       </Text>
                     </>
                   ) : (
@@ -541,29 +600,6 @@ export default function TagMappings() {
             </>
           )}
 
-          {testResult && (
-            <Paper withBorder p="md" mb="md" bg={testResult.success ? 'green.0' : 'red.0'}>
-              <Group mb="xs">
-                {testResult.success ? <IconCheck color="green" /> : <IconX color="red" />}
-                <Text fw={500}>{testResult.message || (testResult.success ? 'Match Found' : 'No Match')}</Text>
-              </Group>
-              {testResult.success && testResult.result !== undefined && (
-                <>
-                  <Text size="sm" fw={500} mt="md">Extracted Value:</Text>
-                  <Code block mt="xs">
-                    {typeof testResult.result === 'object'
-                      ? JSON.stringify(testResult.result, null, 2)
-                      : String(testResult.result)
-                    }
-                  </Code>
-                  <Text size="xs" c="dimmed" mt="xs">Type: {testResult.type}</Text>
-                </>
-              )}
-              {testResult.error && (
-                <Text size="sm" c="red" mt="xs">{testResult.error}</Text>
-              )}
-            </Paper>
-          )}
           <TextInput
             label="InfluxDB Tag/Field Name"
             placeholder="user_id"

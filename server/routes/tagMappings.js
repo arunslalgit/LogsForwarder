@@ -162,8 +162,19 @@ router.post('/preview-influx', (req, res) => {
               // Apply regex transformation if specified
               if (mapping.transform_regex) {
                 try {
-                  const regex = new RegExp(mapping.transform_regex, 'g');
-                  value = String(value).replace(regex, '');
+                  const stringValue = String(value);
+                  const regex = new RegExp(mapping.transform_regex);
+                  const match = stringValue.match(regex);
+
+                  if (match) {
+                    // If there are capture groups, use the first capture group
+                    if (match.length > 1 && match[1] !== undefined) {
+                      value = match[1];
+                    } else {
+                      // No capture groups - remove the matched pattern
+                      value = stringValue.replace(new RegExp(mapping.transform_regex, 'g'), '');
+                    }
+                  }
                 } catch (regexError) {
                   errors.push(`Sample ${sampleIndex + 1}: Invalid transform regex for ${mapping.influx_tag_name}: ${regexError.message}`);
                 }
