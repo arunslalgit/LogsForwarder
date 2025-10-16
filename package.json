@@ -38,6 +38,7 @@
     "better-sqlite3": "^9.6.0",
     "cookie-parser": "^1.4.7",
     "express": "^5.1.0",
+    "http-proxy-agent": "^7.0.2",
     "https-proxy-agent": "^7.0.6",
     "jsonpath-plus": "^10.3.0",
     "lodash": "^4.17.21",

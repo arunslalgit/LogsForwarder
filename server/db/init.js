@@ -70,12 +70,26 @@ function runMigrations(db) {
       console.log('Running migration: Adding transform_regex column to tag_mappings');
       db.prepare('ALTER TABLE tag_mappings ADD COLUMN transform_regex TEXT').run();
     }
-    
+
     if (!hasIsStatic || !hasStaticValue || !hasTransformRegex) {
       console.log('✓ Tag mappings migration completed');
     }
   } catch (error) {
     console.error('Tag mappings migration error:', error.message);
+  }
+
+  // Migration: Add timestamp_format column to log_sources
+  try {
+    const logSourcesInfo = db.prepare("PRAGMA table_info(log_sources)").all();
+    const hasTimestampFormat = logSourcesInfo.some(col => col.name === 'timestamp_format');
+
+    if (!hasTimestampFormat) {
+      console.log('Running migration: Adding timestamp_format column to log_sources');
+      db.prepare("ALTER TABLE log_sources ADD COLUMN timestamp_format TEXT DEFAULT 'nanoseconds'").run();
+      console.log('✓ Timestamp format migration completed');
+    }
+  } catch (error) {
+    console.error('Timestamp format migration error:', error.message);
   }
 }
 

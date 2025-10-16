@@ -76,7 +76,12 @@ async function executeJob(job) {
   try {
     const sourceClient = LogSourceFactory.createClient(logSource);
     const queryFilter = LogSourceFactory.getQueryFilter(logSource);
-    const influxClient = new InfluxClient(influxConfig);
+    // Add timestamp_format from log source to influx config
+    const influxConfigWithTimestamp = {
+      ...influxConfig,
+      timestamp_format: logSource.timestamp_format || 'nanoseconds'
+    };
+    const influxClient = new InfluxClient(influxConfigWithTimestamp);
     const processor = new LogProcessor(regexPatterns[0].pattern, tagMappings);
 
     const lookbackMs = (job.lookback_minutes || 5) * 60000;
@@ -151,7 +156,18 @@ async function executeJob(job) {
       }
     }
 
-    await influxClient.flush();
+    // Flush remaining points to InfluxDB
+    try {
+      await influxClient.flush();
+    } catch (flushError) {
+      console.error(`InfluxDB flush error for job ${job.id}:`, flushError.message);
+      logger.error(`InfluxDB flush failed`, {
+        jobId: job.id,
+        error: flushError.message,
+        stack: flushError.stack
+      });
+      throw flushError; // Re-throw to be caught by outer catch
+    }
 
     db.updateJobRun(job.id, true);
 

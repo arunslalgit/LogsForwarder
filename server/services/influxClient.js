@@ -1,11 +1,13 @@
 const axios = require('axios');
 const { HttpsProxyAgent } = require('https-proxy-agent');
+const { HttpProxyAgent } = require('http-proxy-agent');
 
 class InfluxClient {
   constructor(config) {
     this.url = config.url;
     this.database = config.database;
     this.measurement = config.measurement_name;
+    this.timestampFormat = config.timestamp_format || 'nanoseconds'; // Store timestamp format
     this.auth = config.username ? {
       username: config.username,
       password: config.password
@@ -19,8 +21,15 @@ class InfluxClient {
         proxyUrl.username = config.proxy_username;
         proxyUrl.password = config.proxy_password;
       }
-      this.proxyConfig.httpsAgent = new HttpsProxyAgent(proxyUrl.href);
-      this.proxyConfig.proxy = false;
+
+      // Determine if target is HTTP or HTTPS and use appropriate agent
+      const isHttpsTarget = this.url.startsWith('https://');
+      if (isHttpsTarget) {
+        this.proxyConfig.httpsAgent = new HttpsProxyAgent(proxyUrl.href);
+      } else {
+        this.proxyConfig.httpAgent = new HttpProxyAgent(proxyUrl.href);
+      }
+      this.proxyConfig.proxy = false; // Disable axios built-in proxy
     }
 
     this.batch = [];
@@ -59,7 +68,18 @@ class InfluxClient {
     }
 
     const measurement = tagSet ? `${this.measurement},${tagSet}` : this.measurement;
-    const timestamp = Math.floor(point.timestamp.getTime() * 1000000);
+
+    // Convert timestamp based on configured format
+    const timeMs = point.timestamp.getTime();
+    let timestamp;
+    if (this.timestampFormat === 'milliseconds') {
+      timestamp = timeMs;
+    } else if (this.timestampFormat === 'seconds') {
+      timestamp = Math.floor(timeMs / 1000);
+    } else {
+      // Default to nanoseconds
+      timestamp = Math.floor(timeMs * 1000000);
+    }
 
     return `${measurement} ${fieldSet} ${timestamp}`;
   }
@@ -85,7 +105,7 @@ class InfluxClient {
       await axios.post(writeUrl, lines, {
         headers: { 'Content-Type': 'text/plain' },
         auth: this.auth,
-        timeout: 10000,
+        timeout: 60000, // Increased to 60 seconds for proxy connections
         ...this.proxyConfig
       });
 

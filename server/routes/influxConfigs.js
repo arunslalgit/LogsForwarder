@@ -3,6 +3,7 @@ const router = express.Router();
 const db = require('../db/queries');
 const axios = require('axios');
 const { HttpsProxyAgent } = require('https-proxy-agent');
+const { HttpProxyAgent } = require('http-proxy-agent');
 
 router.get('/', (req, res) => {
   try {
@@ -65,7 +66,7 @@ router.post('/test-connection', async (req, res) => {
     }
 
     // Build proxy configuration if provided
-    const axiosConfig = { timeout: 10000 };
+    const axiosConfig = { timeout: 60000 }; // Increased to 60 seconds
     if (proxy_url) {
       try {
         const proxyUrl = new URL(proxy_url);
@@ -73,7 +74,14 @@ router.post('/test-connection', async (req, res) => {
           proxyUrl.username = proxy_username;
           proxyUrl.password = proxy_password;
         }
-        axiosConfig.httpsAgent = new HttpsProxyAgent(proxyUrl.href);
+
+        // Use appropriate agent based on target URL protocol
+        const isHttpsTarget = url.startsWith('https://');
+        if (isHttpsTarget) {
+          axiosConfig.httpsAgent = new HttpsProxyAgent(proxyUrl.href);
+        } else {
+          axiosConfig.httpAgent = new HttpProxyAgent(proxyUrl.href);
+        }
         axiosConfig.proxy = false;
       } catch (proxyError) {
         return res.json({

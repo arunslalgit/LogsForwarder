@@ -29,6 +29,7 @@ export default function LogSourceForm() {
       proxy_url: '',
       proxy_username: '',
       proxy_password: '',
+      timestamp_format: 'nanoseconds',
       enabled: 1,
     },
     validate: {
@@ -247,6 +248,19 @@ export default function LogSourceForm() {
             placeholder="••••••••"
             mb="md"
             {...form.getInputProps('proxy_password')}
+          />
+
+          <Title order={5} mt="xl" mb="md">Timestamp Configuration</Title>
+          <Select
+            label="Timestamp Format"
+            description="Format for timestamps sent to InfluxDB. Choose based on your InfluxDB database configuration."
+            data={[
+              { value: 'nanoseconds', label: 'Nanoseconds (default)' },
+              { value: 'milliseconds', label: 'Milliseconds' },
+              { value: 'seconds', label: 'Seconds' }
+            ]}
+            mb="md"
+            {...form.getInputProps('timestamp_format')}
           />
 
           <Switch
