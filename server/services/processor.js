@@ -118,10 +118,31 @@ class LogProcessor {
 
     for (const mapping of this.tagMappings) {
       try {
-        let value = JSONPath({ path: mapping.json_path, json: jsonContent })[0];
+        let value;
 
-        if (value === undefined || value === null) continue;
+        // Check if this is a static tag/field
+        if (mapping.is_static) {
+          value = mapping.static_value;
+        } else {
+          // Extract value using JSONPath
+          value = JSONPath({ path: mapping.json_path, json: jsonContent })[0];
+          
+          if (value === undefined || value === null) continue;
 
+          // Apply regex transformation if specified
+          if (mapping.transform_regex) {
+            try {
+              const regex = new RegExp(mapping.transform_regex, 'g');
+              value = String(value).replace(regex, '');
+            } catch (regexError) {
+              console.error(`Invalid transform regex for ${mapping.influx_tag_name}:`, regexError.message);
+            }
+          }
+        }
+
+        if (value === undefined || value === null || value === '') continue;
+
+        // Convert to appropriate data type
         switch (mapping.data_type) {
           case 'integer':
             value = parseInt(value);
@@ -142,7 +163,7 @@ class LogProcessor {
           tags[mapping.influx_tag_name] = String(value);
         }
       } catch (error) {
-        console.error(`Error processing mapping ${mapping.json_path}:`, error.message);
+        console.error(`Error processing mapping ${mapping.influx_tag_name}:`, error.message);
       }
     }
 
@@ -153,9 +174,10 @@ class LogProcessor {
     return {
       tags,
       fields,
-      timestamp: new Date(logEntry.timestamp)
+      timestamp: logEntry.timestamp || new Date()
     };
   }
+
 }
 
 module.exports = { LogProcessor };

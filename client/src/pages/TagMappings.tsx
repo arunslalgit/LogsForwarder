@@ -33,6 +33,9 @@ export default function TagMappings() {
       influx_tag_name: '',
       is_field: 0,
       data_type: 'string',
+      is_static: 0,
+      static_value: '',
+      transform_regex: '',
     },
   });
 
@@ -378,31 +381,66 @@ export default function TagMappings() {
         )}
 
         <form onSubmit={form.onSubmit(handleCreate)}>
-          <Group align="flex-end" mb="md">
+          <Switch
+            label="Static Tag/Field"
+            description="Use a hardcoded value instead of extracting from log JSON"
+            mb="md"
+            checked={form.values.is_static === 1}
+            onChange={(e) => {
+              form.setFieldValue('is_static', e.currentTarget.checked ? 1 : 0);
+              // Clear json_path when switching to static
+              if (e.currentTarget.checked) {
+                form.setFieldValue('json_path', '');
+              }
+            }}
+          />
+
+          {form.values.is_static === 1 ? (
             <TextInput
-              label="JSON Path"
-              placeholder="$.userId or $.response.statusCode"
+              label="Static Value"
+              placeholder="environment, production, etc."
               required
-              style={{ flex: 1 }}
-              {...form.getInputProps('json_path')}
+              mb="md"
+              description="This value will be used for all logs"
+              {...form.getInputProps('static_value')}
             />
-            <Button
-              variant="light"
-              color="violet"
-              leftSection={<IconWand size={16} />}
-              onClick={() => setPickerOpened(true)}
-              disabled={!extractedJSON}
-            >
-              Pick
-            </Button>
-            <Button
-              variant="light"
-              onClick={handleTestJsonPath}
-              disabled={!extractedJSON || !form.values.json_path}
-            >
-              Test
-            </Button>
-          </Group>
+          ) : (
+            <>
+              <Group align="flex-end" mb="md">
+                <TextInput
+                  label="JSON Path"
+                  placeholder="$.userId or $.response.statusCode"
+                  required
+                  style={{ flex: 1 }}
+                  {...form.getInputProps('json_path')}
+                />
+                <Button
+                  variant="light"
+                  color="violet"
+                  leftSection={<IconWand size={16} />}
+                  onClick={() => setPickerOpened(true)}
+                  disabled={!extractedJSON}
+                >
+                  Pick
+                </Button>
+                <Button
+                  variant="light"
+                  onClick={handleTestJsonPath}
+                  disabled={!extractedJSON || !form.values.json_path}
+                >
+                  Test
+                </Button>
+              </Group>
+
+              <TextInput
+                label="Transform Regex (Optional)"
+                placeholder="[0-9a-f]{8}-[0-9a-f]{4}-.* (removes UUIDs)"
+                mb="md"
+                description="Use regex to remove variable parts (IDs, timestamps) to control cardinality. The matched pattern will be removed from the value."
+                {...form.getInputProps('transform_regex')}
+              />
+            </>
+          )}
 
           {testResult && (
             <Paper withBorder p="md" mb="md" bg={testResult.success ? 'green.0' : 'red.0'}>
@@ -465,20 +503,39 @@ export default function TagMappings() {
       <Table>
         <Table.Thead>
           <Table.Tr>
-            <Table.Th>JSON Path</Table.Th>
+            <Table.Th>Source</Table.Th>
             <Table.Th>InfluxDB Name</Table.Th>
             <Table.Th>Type</Table.Th>
             <Table.Th>Data Type</Table.Th>
+            <Table.Th>Transform</Table.Th>
             <Table.Th>Actions</Table.Th>
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>
           {mappings.map((mapping) => (
             <Table.Tr key={mapping.id}>
-              <Table.Td><Text ff="monospace">{mapping.json_path}</Text></Table.Td>
+              <Table.Td>
+                {(mapping as any).is_static ? (
+                  <Group gap="xs">
+                    <Badge size="xs" color="teal" variant="light">Static</Badge>
+                    <Text size="sm" c="dimmed">{(mapping as any).static_value}</Text>
+                  </Group>
+                ) : (
+                  <Text ff="monospace" size="sm">{mapping.json_path}</Text>
+                )}
+              </Table.Td>
               <Table.Td>{mapping.influx_tag_name}</Table.Td>
               <Table.Td>{mapping.is_field ? 'Field' : 'Tag'}</Table.Td>
               <Table.Td>{mapping.data_type}</Table.Td>
+              <Table.Td>
+                {(mapping as any).transform_regex ? (
+                  <Badge size="xs" color="yellow" variant="light" title={(mapping as any).transform_regex}>
+                    Regex
+                  </Badge>
+                ) : (
+                  <Text size="sm" c="dimmed">-</Text>
+                )}
+              </Table.Td>
               <Table.Td>
                 <ActionIcon
                   variant="light"

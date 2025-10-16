@@ -139,33 +139,55 @@ router.post('/preview-influx', (req, res) => {
 
       mappings.forEach(mapping => {
         try {
-          const result = JSONPath({ path: mapping.json_path, json: jsonData });
-          if (result.length > 0) {
-            let value = result[0];
+          let value;
 
-            // Convert value based on data type
-            if (mapping.data_type === 'integer') {
-              value = parseInt(value, 10);
-            } else if (mapping.data_type === 'float') {
-              value = parseFloat(value);
-            } else if (mapping.data_type === 'boolean') {
-              value = Boolean(value);
-            } else {
-              value = String(value);
-            }
-
-            if (mapping.is_field) {
-              fields[mapping.influx_tag_name] = value;
-            } else {
-              tags[mapping.influx_tag_name] = value;
-            }
+          // Check if this is a static tag/field
+          if (mapping.is_static) {
+            value = mapping.static_value;
           } else {
-            errors.push(`Sample ${sampleIndex + 1}: No value found for ${mapping.influx_tag_name} at path ${mapping.json_path}`);
+            // Extract using JSONPath
+            const result = JSONPath({ path: mapping.json_path, json: jsonData });
+            if (result.length > 0) {
+              value = result[0];
+
+              // Apply regex transformation if specified
+              if (mapping.transform_regex) {
+                try {
+                  const regex = new RegExp(mapping.transform_regex, 'g');
+                  value = String(value).replace(regex, '');
+                } catch (regexError) {
+                  errors.push(`Sample ${sampleIndex + 1}: Invalid transform regex for ${mapping.influx_tag_name}: ${regexError.message}`);
+                }
+              }
+            } else {
+              errors.push(`Sample ${sampleIndex + 1}: No value found for ${mapping.influx_tag_name} at path ${mapping.json_path}`);
+              return;
+            }
+          }
+
+          if (value === undefined || value === null || value === '') return;
+
+          // Convert value based on data type
+          if (mapping.data_type === 'integer') {
+            value = parseInt(value, 10);
+          } else if (mapping.data_type === 'float') {
+            value = parseFloat(value);
+          } else if (mapping.data_type === 'boolean') {
+            value = Boolean(value);
+          } else {
+            value = String(value);
+          }
+
+          if (mapping.is_field) {
+            fields[mapping.influx_tag_name] = value;
+          } else {
+            tags[mapping.influx_tag_name] = value;
           }
         } catch (error) {
           errors.push(`Sample ${sampleIndex + 1}: Error extracting ${mapping.influx_tag_name}: ${error.message}`);
         }
       });
+
 
       // Build tag set
       const tagSet = Object.entries(tags)

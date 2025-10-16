@@ -6,19 +6,16 @@ const { SCHEMA } = require('./schema');
 let db = null;
 
 function initDatabase(rootDir) {
-  // If rootDir is provided, use it; otherwise default to dev location
   const dbPath = rootDir
     ? path.join(rootDir, 'data.db')
     : path.join(__dirname, '../../data.db');
 
   console.log('Database path:', dbPath);
 
-  // Create database (will be created if it doesn't exist)
   db = new Database(dbPath, { verbose: process.env.DEBUG ? console.log : null });
   db.pragma('foreign_keys = ON');
   db.exec(SCHEMA);
 
-  // Run migrations
   runMigrations(db);
 
   const settingsCheck = db.prepare('SELECT COUNT(*) as count FROM app_settings').get();
@@ -33,7 +30,6 @@ function initDatabase(rootDir) {
     console.log('✓ Database connected (existing)');
   }
 
-  // Ensure default admin user exists
   ensureAdminUser(db);
 
   console.log('✓ Database ready at', dbPath);
@@ -41,7 +37,7 @@ function initDatabase(rootDir) {
 }
 
 function runMigrations(db) {
-  // Migration: Add details column to activity_logs if it doesn't exist
+  // Migration: Add details column to activity_logs
   try {
     const tableInfo = db.prepare("PRAGMA table_info(activity_logs)").all();
     const hasDetailsColumn = tableInfo.some(col => col.name === 'details');
@@ -54,6 +50,33 @@ function runMigrations(db) {
   } catch (error) {
     console.error('Migration error:', error.message);
   }
+
+  // Migration: Add static tag/field and regex transformation columns
+  try {
+    const tagMappingsInfo = db.prepare("PRAGMA table_info(tag_mappings)").all();
+    const hasIsStatic = tagMappingsInfo.some(col => col.name === 'is_static');
+    const hasStaticValue = tagMappingsInfo.some(col => col.name === 'static_value');
+    const hasTransformRegex = tagMappingsInfo.some(col => col.name === 'transform_regex');
+
+    if (!hasIsStatic) {
+      console.log('Running migration: Adding is_static column to tag_mappings');
+      db.prepare('ALTER TABLE tag_mappings ADD COLUMN is_static INTEGER DEFAULT 0').run();
+    }
+    if (!hasStaticValue) {
+      console.log('Running migration: Adding static_value column to tag_mappings');
+      db.prepare('ALTER TABLE tag_mappings ADD COLUMN static_value TEXT').run();
+    }
+    if (!hasTransformRegex) {
+      console.log('Running migration: Adding transform_regex column to tag_mappings');
+      db.prepare('ALTER TABLE tag_mappings ADD COLUMN transform_regex TEXT').run();
+    }
+    
+    if (!hasIsStatic || !hasStaticValue || !hasTransformRegex) {
+      console.log('✓ Tag mappings migration completed');
+    }
+  } catch (error) {
+    console.error('Tag mappings migration error:', error.message);
+  }
 }
 
 function ensureAdminUser(db) {
@@ -61,7 +84,6 @@ function ensureAdminUser(db) {
     const adminCheck = db.prepare('SELECT COUNT(*) as count FROM admin_users WHERE username = ?').get('admin');
 
     if (adminCheck.count === 0) {
-      // Create default admin user with password GPRIDE2255
       const passwordHash = bcrypt.hashSync('GPRIDE2255', 10);
       db.prepare(`
         INSERT INTO admin_users (username, password_hash)
