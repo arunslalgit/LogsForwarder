@@ -21,6 +21,15 @@ router.post('/', (req, res) => {
   }
 });
 
+router.put('/:id', (req, res) => {
+  try {
+    db.updateTagMapping(req.params.id, req.body);
+    res.json({ message: 'Tag mapping updated' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 router.delete('/:id', (req, res) => {
   try {
     db.deleteTagMapping(req.params.id);

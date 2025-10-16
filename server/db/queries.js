@@ -127,17 +127,46 @@ function getTagMappings(logSourceId) {
 function createTagMapping(data) {
   const db = getDatabase();
   const stmt = db.prepare(`
-    INSERT INTO tag_mappings (log_source_id, json_path, influx_tag_name, is_field, data_type)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO tag_mappings (log_source_id, json_path, influx_tag_name, is_field, data_type, is_static, static_value, transform_regex)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   return stmt.run(
     data.log_source_id,
-    data.json_path,
+    data.json_path || '',
     data.influx_tag_name,
     data.is_field || 0,
-    data.data_type || 'string'
+    data.data_type || 'string',
+    data.is_static || 0,
+    data.static_value || null,
+    data.transform_regex || null
   ).lastInsertRowid;
+}
+
+function updateTagMapping(id, data) {
+  const db = getDatabase();
+  const stmt = db.prepare(`
+    UPDATE tag_mappings SET
+      json_path = COALESCE(?, json_path),
+      influx_tag_name = COALESCE(?, influx_tag_name),
+      is_field = COALESCE(?, is_field),
+      data_type = COALESCE(?, data_type),
+      is_static = COALESCE(?, is_static),
+      static_value = ?,
+      transform_regex = ?
+    WHERE id = ?
+  `);
+
+  return stmt.run(
+    data.json_path,
+    data.influx_tag_name,
+    data.is_field,
+    data.data_type,
+    data.is_static,
+    data.static_value !== undefined ? data.static_value : null,
+    data.transform_regex !== undefined ? data.transform_regex : null,
+    id
+  );
 }
 
 function deleteTagMapping(id) {
@@ -337,6 +366,7 @@ module.exports = {
 
   getTagMappings,
   createTagMapping,
+  updateTagMapping,
   deleteTagMapping,
 
   getAllInfluxConfigs,

@@ -79,6 +79,10 @@ export const api = {
     method: 'POST',
     body: JSON.stringify(data),
   }),
+  updateTagMapping: (id: number, data: Partial<TagMapping>) => request<{ message: string }>(`/tag-mappings/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  }),
   deleteTagMapping: (id: number) => request<{ message: string }>(`/tag-mappings/${id}`, { method: 'DELETE' }),
   testJsonPath: (data: { json_path: string; test_json: any }) => request<{ success: boolean; result?: any; type?: string; message?: string; error?: string }>('/tag-mappings/test', {
     method: 'POST',

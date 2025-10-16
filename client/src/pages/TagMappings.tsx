@@ -26,6 +26,8 @@ export default function TagMappings() {
   const [timeWindow, setTimeWindow] = useState(5); // Default to 5 minutes
   const [sampleLimit, setSampleLimit] = useState(50); // Default to 50 samples
   const [totalLogsCount, setTotalLogsCount] = useState(0);
+  const [editingMapping, setEditingMapping] = useState<TagMapping | null>(null);
+  const [regexTestResult, setRegexTestResult] = useState<any>(null);
 
   const form = useForm({
     initialValues: {
@@ -58,11 +60,21 @@ export default function TagMappings() {
 
   async function handleCreate(values: typeof form.values) {
     try {
-      await api.createTagMapping({
-        log_source_id: Number(id),
-        ...values,
-      } as any);
-      notifications.show({ title: 'Success', message: 'Tag mapping created', color: 'green' });
+      if (editingMapping) {
+        // Update existing mapping
+        await api.updateTagMapping(editingMapping.id, {
+          ...values,
+        } as any);
+        notifications.show({ title: 'Success', message: 'Tag mapping updated', color: 'green' });
+        setEditingMapping(null);
+      } else {
+        // Create new mapping
+        await api.createTagMapping({
+          log_source_id: Number(id),
+          ...values,
+        } as any);
+        notifications.show({ title: 'Success', message: 'Tag mapping created', color: 'green' });
+      }
       form.reset();
       loadData();
       // Auto-refresh preview if we have sample JSON
@@ -71,6 +83,62 @@ export default function TagMappings() {
       }
     } catch (error: any) {
       notifications.show({ title: 'Error', message: error.message, color: 'red' });
+    }
+  }
+
+  async function handleEdit(mapping: TagMapping) {
+    setEditingMapping(mapping);
+    form.setValues({
+      json_path: mapping.json_path || '',
+      influx_tag_name: mapping.influx_tag_name,
+      is_field: mapping.is_field,
+      data_type: mapping.data_type,
+      is_static: (mapping as any).is_static || 0,
+      static_value: (mapping as any).static_value || '',
+      transform_regex: (mapping as any).transform_regex || '',
+    });
+  }
+
+  function handleCancelEdit() {
+    setEditingMapping(null);
+    form.reset();
+  }
+
+  async function handleTestRegex() {
+    if (!testResult || !testResult.result) {
+      notifications.show({
+        title: 'No Test Result',
+        message: 'Please test the JSONPath first to see the extracted value',
+        color: 'yellow'
+      });
+      return;
+    }
+
+    if (!form.values.transform_regex) {
+      notifications.show({
+        title: 'Missing Regex',
+        message: 'Please enter a regex pattern to test',
+        color: 'yellow'
+      });
+      return;
+    }
+
+    try {
+      const regex = new RegExp(form.values.transform_regex, 'g');
+      const originalValue = String(testResult.result);
+      const transformedValue = originalValue.replace(regex, '');
+
+      setRegexTestResult({
+        success: true,
+        original: originalValue,
+        transformed: transformedValue,
+        removed: originalValue.length - transformedValue.length
+      });
+    } catch (error: any) {
+      setRegexTestResult({
+        success: false,
+        error: error.message
+      });
     }
   }
 
@@ -323,7 +391,7 @@ export default function TagMappings() {
 
       <Paper shadow="sm" p="lg" mb="xl">
         <Group justify="space-between" mb="md">
-          <Title order={4}>Add New Mapping</Title>
+          <Title order={4}>{editingMapping ? 'Edit Mapping' : 'Add New Mapping'}</Title>
           <Group>
             <NumberInput
               label="Time Window (min)"
@@ -432,13 +500,44 @@ export default function TagMappings() {
                 </Button>
               </Group>
 
-              <TextInput
-                label="Transform Regex (Optional)"
-                placeholder="[0-9a-f]{8}-[0-9a-f]{4}-.* (removes UUIDs)"
-                mb="md"
-                description="Use regex to remove variable parts (IDs, timestamps) to control cardinality. The matched pattern will be removed from the value."
-                {...form.getInputProps('transform_regex')}
-              />
+              <Group align="flex-end" mb="md">
+                <TextInput
+                  label="Transform Regex (Optional)"
+                  placeholder="[0-9a-f]{8}-[0-9a-f]{4}-.* (removes UUIDs)"
+                  style={{ flex: 1 }}
+                  description="Use regex to remove variable parts (IDs, timestamps) to control cardinality. The matched pattern will be removed from the value."
+                  {...form.getInputProps('transform_regex')}
+                />
+                <Button
+                  variant="light"
+                  onClick={handleTestRegex}
+                  disabled={!testResult || !form.values.transform_regex}
+                >
+                  Test Regex
+                </Button>
+              </Group>
+
+              {regexTestResult && (
+                <Paper withBorder p="md" mb="md" bg={regexTestResult.success ? 'green.0' : 'red.0'}>
+                  <Group mb="xs">
+                    {regexTestResult.success ? <IconCheck color="green" /> : <IconX color="red" />}
+                    <Text fw={500}>{regexTestResult.success ? 'Regex Transform Result' : 'Regex Error'}</Text>
+                  </Group>
+                  {regexTestResult.success ? (
+                    <>
+                      <Text size="sm" fw={500} mt="md">Original Value:</Text>
+                      <Code block mt="xs">{regexTestResult.original}</Code>
+                      <Text size="sm" fw={500} mt="md">After Transform:</Text>
+                      <Code block mt="xs">{regexTestResult.transformed}</Code>
+                      <Text size="xs" c="dimmed" mt="xs">
+                        Removed {regexTestResult.removed} character(s)
+                      </Text>
+                    </>
+                  ) : (
+                    <Text size="sm" c="red" mt="xs">{regexTestResult.error}</Text>
+                  )}
+                </Paper>
+              )}
             </>
           )}
 
@@ -492,8 +591,13 @@ export default function TagMappings() {
             onChange={(e) => form.setFieldValue('is_field', e.currentTarget.checked ? 1 : 0)}
           />
           <Group justify="flex-end">
+            {editingMapping && (
+              <Button variant="outline" onClick={handleCancelEdit}>
+                Cancel
+              </Button>
+            )}
             <Button type="submit" leftSection={<IconPlus size={16} />}>
-              Add Mapping
+              {editingMapping ? 'Update Mapping' : 'Add Mapping'}
             </Button>
           </Group>
         </form>
@@ -537,13 +641,24 @@ export default function TagMappings() {
                 )}
               </Table.Td>
               <Table.Td>
-                <ActionIcon
-                  variant="light"
-                  color="red"
-                  onClick={() => handleDelete(mapping.id)}
-                >
-                  <IconTrash size={16} />
-                </ActionIcon>
+                <Group gap="xs">
+                  <ActionIcon
+                    variant="light"
+                    color="blue"
+                    onClick={() => handleEdit(mapping)}
+                    title="Edit mapping"
+                  >
+                    <IconEdit size={16} />
+                  </ActionIcon>
+                  <ActionIcon
+                    variant="light"
+                    color="red"
+                    onClick={() => handleDelete(mapping.id)}
+                    title="Delete mapping"
+                  >
+                    <IconTrash size={16} />
+                  </ActionIcon>
+                </Group>
               </Table.Td>
             </Table.Tr>
           ))}
