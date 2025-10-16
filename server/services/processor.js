@@ -66,7 +66,6 @@ class LogProcessor {
         const jsonStartIndex = match.index + match[0].indexOf(extracted);
         const completeJSON = this.extractCompleteJSON(messageField, jsonStartIndex);
         if (completeJSON) {
-          console.log(`Processor: Extracted complete JSON: ${completeJSON.length} chars (was ${extracted.length} chars)`);
           extracted = completeJSON;
         }
       }
@@ -80,7 +79,6 @@ class LogProcessor {
         const jsonStartIndex = match.index + match[0].indexOf(extracted);
         const completeJSON = this.extractCompleteJSON(messageField, jsonStartIndex);
         if (completeJSON) {
-          console.log(`Processor: Extracted complete JSON: ${completeJSON.length} chars (was ${extracted.length} chars)`);
           extracted = completeJSON;
         }
       }

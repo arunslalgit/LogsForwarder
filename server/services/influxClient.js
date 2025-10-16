@@ -100,7 +100,17 @@ class InfluxClient {
     this.batch = [];
 
     try {
-      const writeUrl = `${this.url}/write?db=${this.database}&precision=ns`;
+      // Map timestamp format to InfluxDB precision parameter
+      let precision = 'ns'; // default nanoseconds
+      if (this.timestampFormat === 'milliseconds') {
+        precision = 'ms';
+      } else if (this.timestampFormat === 'seconds') {
+        precision = 's';
+      }
+
+      const writeUrl = `${this.url}/write?db=${this.database}&precision=${precision}`;
+
+      console.log(`Writing to InfluxDB: ${writeUrl} (${batchCount} points, precision: ${precision})`);
 
       await axios.post(writeUrl, lines, {
         headers: { 'Content-Type': 'text/plain' },
@@ -109,9 +119,13 @@ class InfluxClient {
         ...this.proxyConfig
       });
 
-      console.log(`✓ Flushed ${batchCount} points to InfluxDB`);
+      console.log(`✓ Flushed ${batchCount} points to InfluxDB (precision: ${precision})`);
     } catch (error) {
       console.error('InfluxDB write error:', error.message);
+      if (error.response) {
+        console.error('Response status:', error.response.status);
+        console.error('Response data:', error.response.data);
+      }
       throw error;
     }
   }

@@ -110,7 +110,6 @@ router.post('/test', (req, res) => {
         const jsonStartIndex = match.index + match[0].indexOf(extracted);
         const completeJSON = extractCompleteJSON(test_sample, jsonStartIndex);
         if (completeJSON) {
-          console.log(`Extracted complete JSON: ${completeJSON.length} chars (was ${extracted.length} chars)`);
           extracted = completeJSON;
           allCaptures.group2 = completeJSON; // Update the capture
         }
@@ -125,7 +124,6 @@ router.post('/test', (req, res) => {
         const jsonStartIndex = match.index + match[0].indexOf(extracted);
         const completeJSON = extractCompleteJSON(test_sample, jsonStartIndex);
         if (completeJSON) {
-          console.log(`Extracted complete JSON: ${completeJSON.length} chars (was ${extracted.length} chars)`);
           extracted = completeJSON;
           allCaptures.group1 = completeJSON;
         }

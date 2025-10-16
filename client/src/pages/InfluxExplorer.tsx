@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Container, Title, Paper, Select, Textarea, Button, Table, Code, Text, Group, Alert, Badge, Tabs, Stack, LoadingOverlay } from '@mantine/core';
-import { IconDatabase, IconPlayerPlay, IconRefresh, IconInfoCircle, IconTable, IconChartLine } from '@tabler/icons-react';
+import { Container, Title, Paper, Select, Textarea, Button, Table, Code, Text, Group, Alert, Badge, Tabs, Stack, LoadingOverlay, TextInput } from '@mantine/core';
+import { IconDatabase, IconPlayerPlay, IconRefresh, IconInfoCircle, IconTable, IconChartLine, IconPencil } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
 import { api } from '../api/client';
 import type { InfluxConfig } from '../types';
@@ -14,6 +14,9 @@ export default function InfluxExplorer() {
   const [queryResult, setQueryResult] = useState<any>(null);
   const [databases, setDatabases] = useState<string[]>([]);
   const [measurements, setMeasurements] = useState<string[]>([]);
+  const [writeData, setWriteData] = useState('test_measurement,tag1=value1 field1=123,field2="test" 1697463600000');
+  const [writeResult, setWriteResult] = useState<any>(null);
+  const [writePrecision, setWritePrecision] = useState('ms');
 
   useEffect(() => {
     loadConfigs();
@@ -91,6 +94,49 @@ export default function InfluxExplorer() {
     } catch (error: any) {
       notifications.show({ title: 'Error', message: error.message, color: 'red' });
       setQueryResult({ error: error.message });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function executeWrite() {
+    if (!selectedConfig) {
+      notifications.show({ title: 'Error', message: 'Please select an InfluxDB configuration', color: 'red' });
+      return;
+    }
+
+    if (!writeData.trim()) {
+      notifications.show({ title: 'Error', message: 'Please enter line protocol data to write', color: 'red' });
+      return;
+    }
+
+    setLoading(true);
+    setWriteResult(null);
+
+    try {
+      const writeUrl = `${selectedConfig.url}/write?db=${selectedConfig.database}&precision=${writePrecision}`;
+      console.log('Writing to:', writeUrl);
+
+      const response = await fetch(writeUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'text/plain',
+        },
+        body: writeData
+      });
+
+      if (response.ok) {
+        setWriteResult({ success: true, message: 'Data written successfully!' });
+        notifications.show({ title: 'Success', message: 'Data written to InfluxDB', color: 'green' });
+      } else {
+        const errorText = await response.text();
+        setWriteResult({ success: false, error: `HTTP ${response.status}: ${errorText}` });
+        notifications.show({ title: 'Write Error', message: `HTTP ${response.status}`, color: 'red' });
+      }
+    } catch (error: any) {
+      console.error('Write error:', error);
+      setWriteResult({ success: false, error: error.message });
+      notifications.show({ title: 'Error', message: error.message, color: 'red' });
     } finally {
       setLoading(false);
     }
@@ -258,6 +304,9 @@ export default function InfluxExplorer() {
             <Tabs.Tab value="query" leftSection={<IconPlayerPlay size={14} />}>
               Query Editor
             </Tabs.Tab>
+            <Tabs.Tab value="write" leftSection={<IconPencil size={14} />}>
+              Write Test
+            </Tabs.Tab>
             <Tabs.Tab value="samples" leftSection={<IconChartLine size={14} />}>
               Sample Queries
             </Tabs.Tab>
@@ -285,6 +334,86 @@ export default function InfluxExplorer() {
             >
               Execute Query
             </Button>
+          </Tabs.Panel>
+
+          <Tabs.Panel value="write" pt="md">
+            <Alert color="blue" icon={<IconInfoCircle size={16} />} mb="md">
+              <Text size="sm" fw={500} mb="xs">Test Write Endpoint</Text>
+              <Text size="xs">
+                This sends a POST request directly from your browser to test if the write endpoint is accessible.
+                If this works but jobs fail, it means the Node.js server is being blocked by Zscaler/firewall.
+              </Text>
+            </Alert>
+
+            <Select
+              label="Timestamp Precision"
+              description="Choose the precision for your timestamp values"
+              data={[
+                { value: 'ns', label: 'Nanoseconds (ns)' },
+                { value: 'ms', label: 'Milliseconds (ms)' },
+                { value: 's', label: 'Seconds (s)' }
+              ]}
+              value={writePrecision}
+              onChange={(val) => setWritePrecision(val || 'ms')}
+              mb="md"
+              style={{ maxWidth: '300px' }}
+            />
+
+            <Textarea
+              label="Line Protocol Data"
+              description="Enter data in InfluxDB line protocol format"
+              placeholder="measurement_name,tag1=value1 field1=123,field2='text' timestamp"
+              value={writeData}
+              onChange={(e) => setWriteData(e.target.value)}
+              minRows={6}
+              autosize
+              styles={{ input: { fontFamily: 'monospace', fontSize: '13px' } }}
+              mb="md"
+            />
+
+            <Code block mb="md" style={{ fontSize: '11px' }}>
+              {`Example format:\n` +
+               `test_measurement,tag1=value1,tag2=value2 field1=123,field2="text" ${Date.now()}\n\n` +
+               `- measurement_name: Name of your measurement\n` +
+               `- tags (optional): comma-separated key=value pairs\n` +
+               `- fields (required): comma-separated key=value pairs\n` +
+               `- timestamp (optional): numeric timestamp in chosen precision`}
+            </Code>
+
+            <Group>
+              <Button
+                leftSection={<IconPencil size={16} />}
+                onClick={executeWrite}
+                loading={loading}
+                disabled={!selectedConfig || !writeData}
+              >
+                Write Data
+              </Button>
+              <Button
+                variant="light"
+                onClick={() => setWriteData(`test_measurement,tag1=testValue field1=123,field2="hello" ${Date.now()}`)}
+              >
+                Generate Sample
+              </Button>
+            </Group>
+
+            {writeResult && (
+              <Alert
+                color={writeResult.success ? 'green' : 'red'}
+                icon={<IconInfoCircle size={16} />}
+                mt="md"
+              >
+                <Text size="sm" fw={500}>
+                  {writeResult.success ? 'Write Successful!' : 'Write Failed'}
+                </Text>
+                {writeResult.message && <Text size="xs" mt="xs">{writeResult.message}</Text>}
+                {writeResult.error && (
+                  <Code block mt="xs" style={{ fontSize: '11px' }}>
+                    {writeResult.error}
+                  </Code>
+                )}
+              </Alert>
+            )}
           </Tabs.Panel>
 
           <Tabs.Panel value="samples" pt="md">
