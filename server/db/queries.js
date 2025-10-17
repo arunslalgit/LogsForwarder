@@ -246,10 +246,13 @@ function deleteInfluxConfig(id) {
 function getAllJobs() {
   const db = getDatabase();
   return db.prepare(`
-    SELECT j.*, ls.name as log_source_name, ls.source_type, ic.name as influx_config_name
+    SELECT j.*, ls.name as log_source_name, ls.source_type,
+           ic.name as influx_config_name,
+           pc.name as postgres_config_name
     FROM jobs j
     JOIN log_sources ls ON j.log_source_id = ls.id
-    JOIN influx_configs ic ON j.influx_config_id = ic.id
+    LEFT JOIN influx_configs ic ON j.influx_config_id = ic.id
+    LEFT JOIN postgres_configs pc ON j.postgres_config_id = pc.id
     ORDER BY j.id DESC
   `).all();
 }
@@ -257,10 +260,29 @@ function getAllJobs() {
 function getJob(id) {
   const db = getDatabase();
   return db.prepare(`
-    SELECT j.*, ls.name as log_source_name, ls.source_type, ic.name as influx_config_name
+    SELECT
+      j.id, j.log_source_id, j.destination_type, j.influx_config_id, j.postgres_config_id,
+      j.cron_schedule, j.lookback_minutes, j.max_lookback_minutes, j.last_run, j.last_success, j.enabled,
+      ls.name as log_source_name, ls.source_type, ls.dynatrace_url, ls.dynatrace_token,
+      ls.dynatrace_query_filter, ls.splunk_url, ls.splunk_token, ls.splunk_search_query,
+      ls.splunk_index, ls.file_path, ls.file_search_query, ls.proxy_url as ls_proxy_url,
+      ls.proxy_username as ls_proxy_username, ls.proxy_password as ls_proxy_password,
+      ic.name as influx_config_name, ic.url as influx_url, ic.database as influx_database,
+      ic.username as influx_username, ic.password as influx_password,
+      ic.measurement_name, ic.batch_size, ic.batch_interval_seconds,
+      ic.proxy_url as ic_proxy_url, ic.proxy_username as ic_proxy_username,
+      ic.proxy_password as ic_proxy_password, ic.timestamp_format,
+      pc.name as postgres_config_name, pc.host as pg_host, pc.port as pg_port,
+      pc.database as pg_database, pc.username as pg_username, pc.password as pg_password,
+      pc.schema_name as pg_schema, pc.table_name as pg_table, pc.dedup_keys as pg_dedup_keys,
+      pc.tag_columns_schema as pg_tag_columns_schema, pc.auto_create_table as pg_auto_create_table,
+      pc.batch_size as pg_batch_size, pc.batch_interval_seconds as pg_batch_interval_seconds,
+      pc.proxy_url as pc_proxy_url, pc.proxy_username as pc_proxy_username,
+      pc.proxy_password as pc_proxy_password
     FROM jobs j
     JOIN log_sources ls ON j.log_source_id = ls.id
-    JOIN influx_configs ic ON j.influx_config_id = ic.id
+    LEFT JOIN influx_configs ic ON j.influx_config_id = ic.id
+    LEFT JOIN postgres_configs pc ON j.postgres_config_id = pc.id
     WHERE j.id = ?
   `).get(id);
 }
@@ -325,6 +347,10 @@ function updateJob(id, data) {
   const db = getDatabase();
   const stmt = db.prepare(`
     UPDATE jobs SET
+      log_source_id = COALESCE(?, log_source_id),
+      destination_type = COALESCE(?, destination_type),
+      influx_config_id = ?,
+      postgres_config_id = ?,
       cron_schedule = COALESCE(?, cron_schedule),
       lookback_minutes = COALESCE(?, lookback_minutes),
       max_lookback_minutes = COALESCE(?, max_lookback_minutes),
@@ -332,7 +358,17 @@ function updateJob(id, data) {
     WHERE id = ?
   `);
 
-  return stmt.run(data.cron_schedule, data.lookback_minutes, data.max_lookback_minutes, data.enabled, id);
+  return stmt.run(
+    data.log_source_id,
+    data.destination_type,
+    data.influx_config_id !== undefined ? data.influx_config_id : null,
+    data.postgres_config_id !== undefined ? data.postgres_config_id : null,
+    data.cron_schedule,
+    data.lookback_minutes,
+    data.max_lookback_minutes,
+    data.enabled,
+    id
+  );
 }
 
 function updateJobRun(jobId, success) {
@@ -357,10 +393,15 @@ function deleteJob(id) {
 function getActivityLogs(limit = 100, offset = 0) {
   const db = getDatabase();
   return db.prepare(`
-    SELECT al.*, j.id as job_id, ls.name as log_source_name, ls.source_type
+    SELECT al.*, j.id as job_id, j.destination_type,
+           ls.name as log_source_name, ls.source_type,
+           ic.name as influx_config_name,
+           pc.name as postgres_config_name
     FROM activity_logs al
     LEFT JOIN jobs j ON al.job_id = j.id
     LEFT JOIN log_sources ls ON j.log_source_id = ls.id
+    LEFT JOIN influx_configs ic ON j.influx_config_id = ic.id
+    LEFT JOIN postgres_configs pc ON j.postgres_config_id = pc.id
     ORDER BY al.timestamp DESC
     LIMIT ? OFFSET ?
   `).all(limit, offset);

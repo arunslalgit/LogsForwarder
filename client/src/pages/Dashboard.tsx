@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Container, Title, Grid, Card, Text, Badge, Table } from '@mantine/core';
+import { Container, Title, Grid, Card, Text, Badge, Table, Alert } from '@mantine/core';
+import { IconAlertCircle } from '@tabler/icons-react';
 import { api } from '../api/client';
 import type { ActivityLog } from '../types';
 import { formatDateTime } from '../utils/dateFormat';
@@ -7,6 +8,7 @@ import { formatDateTime } from '../utils/dateFormat';
 export default function Dashboard() {
   const [stats, setStats] = useState({ jobs: 0, sources: 0, influxConfigs: 0 });
   const [recentLogs, setRecentLogs] = useState<ActivityLog[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     loadData();
@@ -14,6 +16,7 @@ export default function Dashboard() {
 
   async function loadData() {
     try {
+      setError(null);
       const [jobs, sources, configs, logs] = await Promise.all([
         api.getJobs(),
         api.getLogSources(),
@@ -30,6 +33,7 @@ export default function Dashboard() {
       setRecentLogs(logs);
     } catch (error) {
       console.error('Failed to load dashboard:', error);
+      setError(error instanceof Error ? error.message : 'Failed to load dashboard');
     }
   }
 
@@ -44,6 +48,12 @@ export default function Dashboard() {
   return (
     <Container size="xl">
       <Title order={2} mb="lg">Dashboard</Title>
+
+      {error && (
+        <Alert icon={<IconAlertCircle size={16} />} color="red" mb="lg">
+          {error}
+        </Alert>
+      )}
 
       <Grid mb="xl">
         <Grid.Col span={4}>
@@ -72,7 +82,7 @@ export default function Dashboard() {
           <Table.Tr>
             <Table.Th>Time</Table.Th>
             <Table.Th>Level</Table.Th>
-            <Table.Th>Source</Table.Th>
+            <Table.Th>Source → Destination</Table.Th>
             <Table.Th>Message</Table.Th>
             <Table.Th>Processed</Table.Th>
             <Table.Th>Failed</Table.Th>
@@ -88,6 +98,19 @@ export default function Dashboard() {
               <Table.Td>
                 {log.log_source_name || 'N/A'}
                 {log.source_type && <Badge ml="xs" size="xs" variant="light">{log.source_type}</Badge>}
+                {' → '}
+                {log.destination_type === 'influxdb' && log.influx_config_name && (
+                  <>
+                    {log.influx_config_name}
+                    <Badge ml="xs" size="xs" variant="light" color="cyan">InfluxDB</Badge>
+                  </>
+                )}
+                {log.destination_type === 'postgresql' && log.postgres_config_name && (
+                  <>
+                    {log.postgres_config_name}
+                    <Badge ml="xs" size="xs" variant="light" color="blue">PostgreSQL</Badge>
+                  </>
+                )}
               </Table.Td>
               <Table.Td>{log.message}</Table.Td>
               <Table.Td>{log.records_processed}</Table.Td>

@@ -14,11 +14,23 @@ router.get('/', (req, res) => {
 
 router.post('/', (req, res) => {
   try {
-    const { log_source_id, influx_config_id } = req.body;
+    const { log_source_id, destination_type, influx_config_id, postgres_config_id } = req.body;
 
     // Validate required fields
-    if (!log_source_id || !influx_config_id) {
-      return res.status(400).json({ error: 'log_source_id and influx_config_id are required' });
+    if (!log_source_id) {
+      return res.status(400).json({ error: 'log_source_id is required' });
+    }
+
+    // Validate destination config based on type
+    if (destination_type === 'postgresql') {
+      if (!postgres_config_id) {
+        return res.status(400).json({ error: 'postgres_config_id is required for PostgreSQL destination' });
+      }
+    } else {
+      // Default to influxdb
+      if (!influx_config_id) {
+        return res.status(400).json({ error: 'influx_config_id is required for InfluxDB destination' });
+      }
     }
 
     // Validate that log source exists
@@ -27,10 +39,17 @@ router.post('/', (req, res) => {
       return res.status(404).json({ error: `Log source with id ${log_source_id} not found` });
     }
 
-    // Validate that influx config exists
-    const influxConfig = db.getInfluxConfig(influx_config_id);
-    if (!influxConfig) {
-      return res.status(404).json({ error: `InfluxDB config with id ${influx_config_id} not found` });
+    // Validate that destination config exists
+    if (destination_type === 'postgresql') {
+      const postgresConfig = db.getPostgresConfig(postgres_config_id);
+      if (!postgresConfig) {
+        return res.status(404).json({ error: `PostgreSQL config with id ${postgres_config_id} not found` });
+      }
+    } else {
+      const influxConfig = db.getInfluxConfig(influx_config_id);
+      if (!influxConfig) {
+        return res.status(404).json({ error: `InfluxDB config with id ${influx_config_id} not found` });
+      }
     }
 
     const id = db.createJob(req.body);

@@ -121,7 +121,8 @@ class InfluxClient {
   }
 
   escapeFieldValue(value) {
-    return String(value).replace(/"/g, '\\"');
+    // Escape backslashes first, then double quotes
+    return String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
   }
 
   async flush() {

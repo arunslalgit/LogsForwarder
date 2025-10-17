@@ -48,6 +48,9 @@ async function executeJob(job) {
   const logger = getLogger();
   const jobStart = Date.now();
 
+  // Declare these in function scope so they're available in catch block
+  let logSource, destinationType, destinationConfig;
+
   // Check if job is already running
   if (runningJobs.has(job.id)) {
     const runningStartTime = runningJobs.get(job.id);
@@ -75,7 +78,7 @@ async function executeJob(job) {
       influxConfigId: job.influx_config_id
     });
 
-    const logSource = db.getLogSource(job.log_source_id);
+    logSource = db.getLogSource(job.log_source_id);
     if (!logSource || !logSource.enabled) {
       console.log(`[Scheduler] ✗ Job ${job.id} skipped: log source ${job.log_source_id} disabled or not found`);
       logger.warn(`Job skipped: log source disabled or not found`, { jobId: job.id, logSourceId: job.log_source_id });
@@ -84,10 +87,8 @@ async function executeJob(job) {
     console.log(`[Scheduler] ✓ Log Source: "${logSource.name}" (${logSource.source_type})`);
 
     // Validate destination config based on destination type
-    const destinationType = job.destination_type || 'influxdb';
+    destinationType = job.destination_type || 'influxdb';
     console.log(`[Scheduler] Destination Type: ${destinationType}`);
-
-    let destinationConfig;
     if (destinationType === 'influxdb') {
       const influxConfig = db.getInfluxConfig(job.influx_config_id);
       if (!influxConfig || !influxConfig.enabled) {
@@ -365,7 +366,7 @@ async function executeJob(job) {
     db.logActivity(
       job.id,
       'info',
-      `[${logSource.source_type.toUpperCase()}] Processed ${processed} logs, ${failed} failed`,
+      `Processed ${processed} logs, ${failed} failed`,
       processed,
       failed,
       details

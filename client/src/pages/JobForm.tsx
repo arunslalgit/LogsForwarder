@@ -181,7 +181,7 @@ export default function JobForm() {
             placeholder="5"
             description="Minutes to look back from last run to avoid data gaps due to delays"
             min={0}
-            max={60}
+            max={43200}
             required
             mb="md"
             {...form.getInputProps('lookback_minutes')}

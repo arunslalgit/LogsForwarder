@@ -227,13 +227,27 @@ export default function PostgresExplorer() {
                   <Table.Tbody>
                     {queryResult.rows.map((row: any, idx: number) => (
                       <Table.Tr key={idx}>
-                        {queryResult.fields.map((field: any) => (
-                          <Table.Td key={field.name}>
-                            <Text size="sm" style={{ maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                              {row[field.name] !== null ? String(row[field.name]) : <Text c="dimmed">NULL</Text>}
-                            </Text>
-                          </Table.Td>
-                        ))}
+                        {queryResult.fields.map((field: any) => {
+                          const value = row[field.name];
+                          let displayValue;
+
+                          if (value === null) {
+                            displayValue = <Text c="dimmed">NULL</Text>;
+                          } else if (typeof value === 'object') {
+                            // Format objects/arrays as JSON
+                            displayValue = JSON.stringify(value, null, 2);
+                          } else {
+                            displayValue = String(value);
+                          }
+
+                          return (
+                            <Table.Td key={field.name}>
+                              <Text size="sm" style={{ maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'pre-wrap' }}>
+                                {displayValue}
+                              </Text>
+                            </Table.Td>
+                          );
+                        })}
                       </Table.Tr>
                     ))}
                   </Table.Tbody>

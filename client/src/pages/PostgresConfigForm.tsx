@@ -8,7 +8,7 @@ import { api } from '../api/client';
 import type { LogSource } from '../types';
 
 const DEFAULT_SCHEMA = `[
-  {"name": "timestamp", "type": "TIMESTAMP", "required": true, "indexed": true},
+  {"name": "timestamp", "type": "TIMESTAMPTZ", "required": true, "indexed": true},
   {"name": "service_name", "type": "TEXT", "required": false, "indexed": true},
   {"name": "environment", "type": "TEXT", "required": false, "indexed": true}
 ]`;
@@ -245,7 +245,10 @@ export default function PostgresConfigForm() {
                     Tag Columns Schema (JSON)
                   </Text>
                   <Text size="xs" c="dimmed">
-                    Define columns with: name, type (TEXT/INTEGER/REAL/BOOLEAN/TIMESTAMP), required (optional), indexed (optional)
+                    Define columns with: name, type (TEXT/INTEGER/REAL/BOOLEAN/TIMESTAMP/TIMESTAMPTZ), required (optional), indexed (optional)
+                  </Text>
+                  <Text size="xs" c="dimmed" mt={4}>
+                    Note: You <strong>must</strong> include a <strong>timestamp</strong> column with type TIMESTAMPTZ for proper time-series data.
                   </Text>
                 </div>
               </Group>

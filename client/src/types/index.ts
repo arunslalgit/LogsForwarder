@@ -111,5 +111,8 @@ export interface ActivityLog {
   timestamp: string;
   log_source_name?: string;
   source_type?: string;
+  destination_type?: string;
+  influx_config_name?: string;
+  postgres_config_name?: string;
   details?: string; // JSON string containing detailed error/failure information
 }

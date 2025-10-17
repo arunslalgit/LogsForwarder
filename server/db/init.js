@@ -111,6 +111,7 @@ function runMigrations(db) {
     const jobsInfo = db.prepare("PRAGMA table_info(jobs)").all();
     const hasDestinationType = jobsInfo.some(col => col.name === 'destination_type');
     const hasPostgresConfigId = jobsInfo.some(col => col.name === 'postgres_config_id');
+    const influxConfigIdCol = jobsInfo.find(col => col.name === 'influx_config_id');
 
     if (!hasDestinationType) {
       console.log('Running migration: Adding destination_type column to jobs');
@@ -119,6 +120,48 @@ function runMigrations(db) {
     if (!hasPostgresConfigId) {
       console.log('Running migration: Adding postgres_config_id column to jobs');
       db.prepare("ALTER TABLE jobs ADD COLUMN postgres_config_id INTEGER REFERENCES postgres_configs(id)").run();
+    }
+
+    // Migration: Make influx_config_id nullable (SQLite doesn't support ALTER COLUMN, so recreate table)
+    if (influxConfigIdCol && influxConfigIdCol.notnull === 1) {
+      console.log('Running migration: Making influx_config_id nullable in jobs table');
+
+      // SQLite doesn't support ALTER COLUMN, so we need to recreate the table
+      db.exec(`
+        BEGIN TRANSACTION;
+
+        -- Create new table with nullable influx_config_id
+        CREATE TABLE jobs_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          log_source_id INTEGER NOT NULL,
+          destination_type TEXT NOT NULL DEFAULT 'influxdb' CHECK(destination_type IN ('influxdb', 'postgresql')),
+          influx_config_id INTEGER,
+          postgres_config_id INTEGER,
+          cron_schedule TEXT DEFAULT '*/5 * * * *',
+          lookback_minutes INTEGER DEFAULT 5,
+          max_lookback_minutes INTEGER DEFAULT 30,
+          last_run TEXT,
+          last_success TEXT,
+          enabled INTEGER DEFAULT 1,
+          FOREIGN KEY (log_source_id) REFERENCES log_sources(id) ON DELETE CASCADE,
+          FOREIGN KEY (influx_config_id) REFERENCES influx_configs(id) ON DELETE CASCADE,
+          FOREIGN KEY (postgres_config_id) REFERENCES postgres_configs(id) ON DELETE CASCADE
+        );
+
+        -- Copy data from old table
+        INSERT INTO jobs_new SELECT * FROM jobs;
+
+        -- Drop old table and rename new table
+        DROP TABLE jobs;
+        ALTER TABLE jobs_new RENAME TO jobs;
+
+        -- Recreate index
+        CREATE INDEX IF NOT EXISTS idx_jobs_enabled ON jobs(enabled);
+
+        COMMIT;
+      `);
+
+      console.log('✓ influx_config_id is now nullable');
     }
 
     if (!hasDestinationType || !hasPostgresConfigId) {

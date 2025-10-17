@@ -43,6 +43,9 @@ class PostgresClient {
     this.seenHashes = new Set();
     this.maxCacheSize = 10000;
 
+    // Track flush errors for reporting to activity logs
+    this.flushErrors = [];
+
     console.log(`[PostgresClient] Initializing for config "${config.name}" (ID: ${config.id})`);
     console.log(`[PostgresClient] Target: ${config.host}:${config.port}/${config.database}`);
     console.log(`[PostgresClient] Table: ${this.schemaName}.${this.tableName}`);
@@ -77,45 +80,42 @@ class PostgresClient {
    */
   async ensureTableExists() {
     try {
-      // Build tag columns definition
+      // Build tag columns definition from user-defined schema with quoted identifiers
       const tagColumnsDef = this.tagColumns.map(col =>
-        `  ${col.name} ${col.type}${col.required ? ' NOT NULL' : ''}`
+        `  ${format.ident(col.name)} ${col.type}${col.required ? ' NOT NULL' : ''}`
       ).join(',\n');
 
-      // Build unique constraint for deduplication
+      // Build unique constraint for deduplication with quoted column names
       const dedupConstraint = this.dedupKeys.length > 0
-        ? `,\n  CONSTRAINT uq_${this.tableName}_dedup UNIQUE (${this.dedupKeys.join(', ')})`
+        ? `,\n  CONSTRAINT ${format.ident('uq_' + this.tableName + '_dedup')} UNIQUE (${this.dedupKeys.map(k => format.ident(k)).join(', ')})`
         : '';
 
-      // Create table SQL
+      // Create table SQL - only user-defined columns, no automatic timestamp
       const createTableQuery = `
-        CREATE TABLE IF NOT EXISTS ${this.schemaName}.${this.tableName} (
+        CREATE TABLE IF NOT EXISTS ${format.ident(this.schemaName)}.${format.ident(this.tableName)} (
           id BIGSERIAL PRIMARY KEY,
-          timestamp TIMESTAMPTZ NOT NULL,
-${tagColumnsDef ? tagColumnsDef + ',\n' : ''}          fields JSONB,
+${tagColumnsDef}${tagColumnsDef ? ',' : ''}
+          fields JSONB,
           inserted_at TIMESTAMPTZ DEFAULT NOW()${dedupConstraint}
         );
       `;
 
-      // Create indexes
+      // Create standard indexes with quoted identifiers
       const createIndexesQuery = `
-        CREATE INDEX IF NOT EXISTS idx_${this.tableName}_timestamp
-          ON ${this.schemaName}.${this.tableName}(timestamp DESC);
+        CREATE INDEX IF NOT EXISTS ${format.ident('idx_' + this.tableName + '_fields')}
+          ON ${format.ident(this.schemaName)}.${format.ident(this.tableName)} USING GIN (fields);
 
-        CREATE INDEX IF NOT EXISTS idx_${this.tableName}_fields
-          ON ${this.schemaName}.${this.tableName} USING GIN (fields);
-
-        CREATE INDEX IF NOT EXISTS idx_${this.tableName}_inserted
-          ON ${this.schemaName}.${this.tableName}(inserted_at DESC);
+        CREATE INDEX IF NOT EXISTS ${format.ident('idx_' + this.tableName + '_inserted')}
+          ON ${format.ident(this.schemaName)}.${format.ident(this.tableName)}(inserted_at DESC);
       `;
 
-      // Create indexes on tag columns
+      // Create indexes on user-defined tag columns (including timestamp if user defined it)
       const tagIndexesQuery = this.tagColumns
         .filter(col => col.indexed)
         .map(col => `
-          CREATE INDEX IF NOT EXISTS idx_${this.tableName}_${col.name}
-            ON ${this.schemaName}.${this.tableName}(${col.name})
-            WHERE ${col.name} IS NOT NULL;
+          CREATE INDEX IF NOT EXISTS ${format.ident('idx_' + this.tableName + '_' + col.name)}
+            ON ${format.ident(this.schemaName)}.${format.ident(this.tableName)}(${format.ident(col.name)})
+            ${col.required ? '' : `WHERE ${format.ident(col.name)} IS NOT NULL`};
         `).join('\n');
 
       await this.pool.query(createTableQuery);
@@ -174,7 +174,13 @@ ${tagColumnsDef ? tagColumnsDef + ',\n' : ''}          fields JSONB,
     if (this.batch.length >= this.batchSize) {
       console.log(`[PostgresClient] Batch size reached (${this.batch.length}), triggering flush`);
       this.flush().catch(err => {
-        console.error(`[PostgresClient] Flush error:`, err.message);
+        console.error(`[PostgresClient] Auto-flush error:`, err.message);
+        // Track error for later reporting to activity logs
+        this.flushErrors.push({
+          timestamp: new Date().toISOString(),
+          error: err.message,
+          batchSize: this.batch.length
+        });
       });
     }
   }
@@ -183,36 +189,55 @@ ${tagColumnsDef ? tagColumnsDef + ',\n' : ''}          fields JSONB,
    * Flush the batch to PostgreSQL with ON CONFLICT handling
    */
   async flush() {
+    // If there are accumulated errors from previous flushes, throw them first
+    if (this.flushErrors.length > 0 && this.batch.length === 0) {
+      const errorSummary = `PostgreSQL encountered ${this.flushErrors.length} flush error(s): ${this.flushErrors[0].error}`;
+      const allErrors = this.flushErrors.slice(); // Copy for error details
+      this.flushErrors = []; // Clear errors
+      const error = new Error(errorSummary);
+      error.details = allErrors;
+      throw error;
+    }
+
     if (this.batch.length === 0) return;
 
     const batchSize = this.batch.length;
     console.log(`[PostgresClient] Flushing ${batchSize} records to PostgreSQL...`);
 
     try {
-      // Build column lists
+      // Build column lists from user-defined schema + fields
       const tagColumnNames = this.tagColumns.map(col => col.name);
-      const allColumns = ['timestamp', ...tagColumnNames, 'fields'];
+      const allColumns = [...tagColumnNames, 'fields'];
 
       // Build values array
       const values = this.batch.map(record => {
         const row = [
-          record.timestamp, // TIMESTAMPTZ
-          ...tagColumnNames.map(colName => record.tags[colName] || null), // tag columns
+          ...tagColumnNames.map(colName => {
+            // Special handling for timestamp column - use record.timestamp
+            if (colName.toLowerCase() === 'timestamp') {
+              return record.timestamp;
+            }
+            return record.tags[colName] || null;
+          }), // tag columns
           JSON.stringify(record.fields) // fields as JSONB
         ];
         return row;
       });
 
       // Use pg-format for safe SQL generation with ON CONFLICT for deduplication
+      // Quote dedup keys for conflict clause
       const dedupClause = this.dedupKeys.length > 0
-        ? `ON CONFLICT (${this.dedupKeys.join(', ')}) DO NOTHING`
+        ? `ON CONFLICT (${this.dedupKeys.map(k => format.ident(k)).join(', ')}) DO NOTHING`
         : '';
 
+      // Build column list with proper quoting
+      const columnsList = allColumns.map(col => format.ident(col)).join(', ');
+
       const query = format(
-        'INSERT INTO %I.%I (%I) VALUES %L %s',
+        'INSERT INTO %I.%I (%s) VALUES %L %s',
         this.schemaName,
         this.tableName,
-        allColumns,
+        columnsList,
         values,
         dedupClause
       );
@@ -267,6 +292,12 @@ ${tagColumnsDef ? tagColumnsDef + ',\n' : ''}          fields JSONB,
         this.logger.error('PostgreSQL batch timer flush failed', {
           configId: this.configId,
           error: err.message
+        });
+        // Track error for later reporting to activity logs
+        this.flushErrors.push({
+          timestamp: new Date().toISOString(),
+          error: err.message,
+          source: 'timer'
         });
       });
     }, this.batchInterval);

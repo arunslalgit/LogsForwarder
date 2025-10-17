@@ -11,7 +11,11 @@ function getBaseUrl() {
   const segments = pathname.split('/').filter(Boolean);
 
   // If first segment exists and isn't a known route, it's likely the base path
-  const knownRoutes = ['log-sources', 'influx-configs', 'jobs', 'regex-patterns', 'tag-mappings', 'sqlite-explorer', 'dashboard'];
+  const knownRoutes = [
+    'log-sources', 'influx-configs', 'postgres-configs', 'jobs',
+    'regex-patterns', 'tag-mappings', 'sqlite-explorer', 'dashboard',
+    'influx-explorer', 'postgres-explorer', 'activity-logs', 'change-password'
+  ];
   if (segments.length > 0 && !knownRoutes.includes(segments[0])) {
     return `/${segments[0]}/api`;
   }
@@ -31,8 +35,16 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
   });
 
   if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.error || 'Request failed');
+    // Check if response is JSON before trying to parse
+    const contentType = response.headers.get('content-type');
+    if (contentType && contentType.includes('application/json')) {
+      const error = await response.json();
+      throw new Error(error.error || 'Request failed');
+    } else {
+      // Response is not JSON (likely HTML error page) - consume the response
+      await response.text();
+      throw new Error(`Request failed: ${response.status} ${response.statusText}`);
+    }
   }
 
   return response.json();

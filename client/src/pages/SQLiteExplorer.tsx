@@ -65,11 +65,23 @@ export default function SQLiteExplorer() {
 
   async function loadTables() {
     try {
-      const response = await fetch(`${API_BASE_URL}/sqlite-explorer/tables`);
+      const response = await fetch(`${API_BASE_URL}/sqlite-explorer/tables`, {
+        credentials: 'include'
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
       const data = await response.json();
       setTables(data);
     } catch (error: any) {
-      notifications.show({ title: 'Error', message: 'Failed to load tables', color: 'red' });
+      console.error('Failed to load tables:', error);
+      notifications.show({
+        title: 'Error Loading Tables',
+        message: error.message || 'Failed to load tables',
+        color: 'red'
+      });
     }
   }
 
@@ -85,9 +97,16 @@ export default function SQLiteExplorer() {
     try {
       const response = await fetch(`${API_BASE_URL}/sqlite-explorer/query`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        credentials: 'include',
         body: JSON.stringify({ query: query.trim() })
       });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
 
       const data = await response.json();
 
@@ -105,6 +124,7 @@ export default function SQLiteExplorer() {
         }
       }
     } catch (error: any) {
+      console.error('Query execution failed:', error);
       notifications.show({ title: 'Error', message: error.message, color: 'red' });
       setQueryResult({ results: [], rowCount: 0, error: error.message });
     } finally {

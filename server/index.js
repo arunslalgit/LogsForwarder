@@ -65,6 +65,14 @@ async function bootstrap() {
 
 app.use(`${BASE_PATH}/api`, routes);
 
+// API 404 handler - must come AFTER API routes but BEFORE SPA fallback
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api') || req.path.startsWith(`${BASE_PATH}/api`)) {
+    return res.status(404).json({ error: 'API endpoint not found', path: req.path });
+  }
+  next();
+});
+
 // Serve frontend (from embedded assets when packaged, or from dist in dev)
 // In pkg, assets are in /snapshot/o11yControlCenter/client/dist
 const clientPath = IS_PKG

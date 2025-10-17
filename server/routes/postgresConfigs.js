@@ -128,10 +128,10 @@ router.post('/recommend-schema', (req, res) => {
           pgType = 'TEXT';
       }
 
-      // Check if this is likely a timestamp field
+      // Check if this is likely a timestamp field - use TIMESTAMPTZ for timestamp columns
       if (mapping.influx_tag_name.toLowerCase().includes('time') ||
           mapping.influx_tag_name.toLowerCase().includes('date')) {
-        pgType = 'TIMESTAMP';
+        pgType = mapping.influx_tag_name.toLowerCase() === 'timestamp' ? 'TIMESTAMPTZ' : 'TIMESTAMP';
       }
 
       return {
@@ -142,12 +142,12 @@ router.post('/recommend-schema', (req, res) => {
       };
     });
 
-    // Always include timestamp if not present
-    const hasTimestamp = schema.some(col => col.name.toLowerCase().includes('time'));
+    // If no timestamp column exists, add one as first column
+    const hasTimestamp = schema.some(col => col.name.toLowerCase() === 'timestamp');
     if (!hasTimestamp) {
       schema.unshift({
         name: 'timestamp',
-        type: 'TIMESTAMP',
+        type: 'TIMESTAMPTZ',
         required: true,
         indexed: true
       });

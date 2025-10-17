@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Container, Title, Table, Badge, Pagination, Group, Collapse, ActionIcon, Code, Text, Box, Stack, Button, Modal, NumberInput } from '@mantine/core';
-import { IconChevronDown, IconChevronRight, IconTrash } from '@tabler/icons-react';
+import { Container, Title, Table, Badge, Pagination, Group, Collapse, ActionIcon, Code, Text, Box, Stack, Button, Modal, NumberInput, TextInput, Select, MultiSelect } from '@mantine/core';
+import { IconChevronDown, IconChevronRight, IconTrash, IconSearch, IconFilter } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
 import { api } from '../api/client';
 import type { ActivityLog } from '../types';
@@ -8,16 +8,29 @@ import { formatDetailDate } from '../utils/dateFormat';
 
 export default function ActivityLogs() {
   const [logs, setLogs] = useState<ActivityLog[]>([]);
+  const [filteredLogs, setFilteredLogs] = useState<ActivityLog[]>([]);
   const [page, setPage] = useState(1);
   const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set());
   const [retentionModalOpen, setRetentionModalOpen] = useState(false);
   const [retentionDays, setRetentionDays] = useState(3);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  // Filter states
+  const [searchText, setSearchText] = useState('');
+  const [levelFilter, setLevelFilter] = useState<string[]>([]);
+  const [sourceTypeFilter, setSourceTypeFilter] = useState<string | null>(null);
+  const [destinationTypeFilter, setDestinationTypeFilter] = useState<string | null>(null);
+  const [jobIdFilter, setJobIdFilter] = useState<string | null>(null);
+
   const pageSize = 50;
 
   useEffect(() => {
     loadLogs();
   }, [page]);
+
+  useEffect(() => {
+    applyFilters();
+  }, [logs, searchText, levelFilter, sourceTypeFilter, destinationTypeFilter, jobIdFilter]);
 
   async function loadLogs() {
     try {
@@ -32,6 +45,43 @@ export default function ActivityLogs() {
       });
       setLogs([]); // Set empty array to prevent crash
     }
+  }
+
+  function applyFilters() {
+    let filtered = [...logs];
+
+    // Search text filter (search in message, source name, destination name)
+    if (searchText) {
+      const search = searchText.toLowerCase();
+      filtered = filtered.filter(log =>
+        log.message?.toLowerCase().includes(search) ||
+        log.log_source_name?.toLowerCase().includes(search) ||
+        log.influx_config_name?.toLowerCase().includes(search) ||
+        log.postgres_config_name?.toLowerCase().includes(search)
+      );
+    }
+
+    // Level filter
+    if (levelFilter.length > 0) {
+      filtered = filtered.filter(log => levelFilter.includes(log.level));
+    }
+
+    // Source type filter
+    if (sourceTypeFilter) {
+      filtered = filtered.filter(log => log.source_type === sourceTypeFilter);
+    }
+
+    // Destination type filter
+    if (destinationTypeFilter) {
+      filtered = filtered.filter(log => log.destination_type === destinationTypeFilter);
+    }
+
+    // Job ID filter
+    if (jobIdFilter) {
+      filtered = filtered.filter(log => log.job_id === Number(jobIdFilter));
+    }
+
+    setFilteredLogs(filtered);
   }
 
   async function handleDeleteOldLogs() {
@@ -167,6 +217,14 @@ export default function ActivityLogs() {
     }
   };
 
+  // Helper function to generate job name
+  const getJobName = (log: ActivityLog) => {
+    if (!log.job_id) return 'N/A';
+    const source = log.log_source_name || 'Unknown';
+    const destName = log.destination_type === 'influxdb' ? log.influx_config_name : log.postgres_config_name;
+    return `Job #${log.job_id}: ${source} → ${destName || 'Unknown'}`;
+  };
+
   return (
     <Container size="xl">
       <Group justify="space-between" mb="lg">
@@ -180,6 +238,69 @@ export default function ActivityLogs() {
           Clean Old Logs
         </Button>
       </Group>
+
+      {/* Filters Section */}
+      <Box mb="lg" p="md" style={{ border: '1px solid #e0e0e0', borderRadius: 8 }}>
+        <Group mb="xs">
+          <IconFilter size={18} />
+          <Text fw={500}>Filters</Text>
+        </Group>
+        <Group grow>
+          <TextInput
+            leftSection={<IconSearch size={16} />}
+            placeholder="Search in messages, sources, destinations..."
+            value={searchText}
+            onChange={(e) => setSearchText(e.currentTarget.value)}
+          />
+          <MultiSelect
+            placeholder="Filter by level"
+            data={[
+              { value: 'info', label: 'Info' },
+              { value: 'warning', label: 'Warning' },
+              { value: 'error', label: 'Error' }
+            ]}
+            value={levelFilter}
+            onChange={setLevelFilter}
+            clearable
+          />
+          <Select
+            placeholder="Filter by source type"
+            data={[
+              { value: 'file', label: 'File' },
+              { value: 'splunk', label: 'Splunk' },
+              { value: 'dynatrace', label: 'Dynatrace' }
+            ]}
+            value={sourceTypeFilter}
+            onChange={setSourceTypeFilter}
+            clearable
+          />
+          <Select
+            placeholder="Filter by job"
+            data={Array.from(new Set(logs.map(log => log.job_id).filter(id => id !== null && id !== undefined)))
+              .sort((a, b) => a! - b!)
+              .map(id => ({
+                value: String(id),
+                label: `Job #${id}`
+              }))}
+            value={jobIdFilter}
+            onChange={setJobIdFilter}
+            clearable
+          />
+          <Select
+            placeholder="Filter by destination"
+            data={[
+              { value: 'influxdb', label: 'InfluxDB' },
+              { value: 'postgresql', label: 'PostgreSQL' }
+            ]}
+            value={destinationTypeFilter}
+            onChange={setDestinationTypeFilter}
+            clearable
+          />
+        </Group>
+        <Text size="xs" c="dimmed" mt="xs">
+          Showing {filteredLogs.length} of {logs.length} logs
+        </Text>
+      </Box>
 
       <Modal
         opened={retentionModalOpen}
@@ -214,15 +335,16 @@ export default function ActivityLogs() {
           <Table.Tr>
             <Table.Th style={{ width: 40 }}></Table.Th>
             <Table.Th>Timestamp</Table.Th>
+            <Table.Th>Job</Table.Th>
             <Table.Th>Level</Table.Th>
-            <Table.Th>Source</Table.Th>
+            <Table.Th>Source → Destination</Table.Th>
             <Table.Th>Message</Table.Th>
             <Table.Th>Processed</Table.Th>
             <Table.Th>Failed</Table.Th>
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>
-          {logs.map((log) => (
+          {filteredLogs.map((log) => (
             <>
               <Table.Tr key={log.id}>
                 <Table.Td>
@@ -242,6 +364,9 @@ export default function ActivityLogs() {
                 </Table.Td>
                 <Table.Td>{formatDetailDate(log.timestamp)}</Table.Td>
                 <Table.Td>
+                  <Text size="sm">{getJobName(log)}</Text>
+                </Table.Td>
+                <Table.Td>
                   <Badge color={getLevelColor(log.level)} size="sm">
                     {log.level}
                   </Badge>
@@ -253,6 +378,19 @@ export default function ActivityLogs() {
                       {log.source_type}
                     </Badge>
                   )}
+                  {' → '}
+                  {log.destination_type === 'influxdb' && log.influx_config_name && (
+                    <>
+                      {log.influx_config_name}
+                      <Badge ml="xs" size="xs" variant="light" color="cyan">InfluxDB</Badge>
+                    </>
+                  )}
+                  {log.destination_type === 'postgresql' && log.postgres_config_name && (
+                    <>
+                      {log.postgres_config_name}
+                      <Badge ml="xs" size="xs" variant="light" color="blue">PostgreSQL</Badge>
+                    </>
+                  )}
                 </Table.Td>
                 <Table.Td>{log.message}</Table.Td>
                 <Table.Td>{log.records_processed}</Table.Td>
@@ -260,7 +398,7 @@ export default function ActivityLogs() {
               </Table.Tr>
               {log.details && expandedRows.has(log.id) && (
                 <Table.Tr key={`${log.id}-details`}>
-                  <Table.Td colSpan={7}>
+                  <Table.Td colSpan={8}>
                     <Collapse in={expandedRows.has(log.id)}>
                       {renderDetails(log)}
                     </Collapse>
