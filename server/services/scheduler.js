@@ -48,8 +48,8 @@ async function executeJob(job) {
   const logger = getLogger();
   const jobStart = Date.now();
 
-  // Declare these in function scope so they're available in catch block
-  let logSource, destinationType, destinationConfig;
+  // Declare these in function scope so they're available in catch/finally blocks
+  let logSource, destinationType, destinationConfig, destinationClient;
 
   // Check if job is already running
   if (runningJobs.has(job.id)) {
@@ -63,10 +63,10 @@ async function executeJob(job) {
     return;
   }
 
-  // Mark job as running
-  runningJobs.set(job.id, jobStart);
-
   try {
+    // Mark job as running
+    runningJobs.set(job.id, jobStart);
+
     console.log(`\n========== JOB EXECUTION START ==========`);
     console.log(`[Scheduler] Job ID: ${job.id}`);
     console.log(`[Scheduler] Cron: ${job.cron_schedule}`);
@@ -153,7 +153,6 @@ async function executeJob(job) {
     };
 
     // Create destination client based on type
-    let destinationClient;
     if (destinationType === 'influxdb') {
       const influxConfigData = {
         id: job.influx_config_id,
@@ -437,6 +436,20 @@ async function executeJob(job) {
 
     db.logActivity(job.id, 'error', error.message, 0, 0, errorDetails);
   } finally {
+    // Cleanup destination client (close connections, timers, etc.)
+    if (destinationClient && typeof destinationClient.destroy === 'function') {
+      try {
+        // Don't await - let cleanup happen in background to avoid blocking
+        // The client will flush remaining data and close connections
+        destinationClient.destroy().catch(err => {
+          console.error(`[Scheduler] Background cleanup error for job ${job.id}:`, err.message);
+        });
+        console.log(`[Scheduler] ✓ Destination client cleanup initiated for job ${job.id}`);
+      } catch (cleanupError) {
+        console.error(`[Scheduler] ✗ Cleanup error for job ${job.id}:`, cleanupError.message);
+      }
+    }
+
     // Always remove job from running set when execution completes or fails
     runningJobs.delete(job.id);
     console.log(`[Scheduler] Job ${job.id} execution lock released`);

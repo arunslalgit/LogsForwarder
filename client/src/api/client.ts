@@ -35,6 +35,19 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
   });
 
   if (!response.ok) {
+    // Handle 401 Unauthorized - redirect to login
+    if (response.status === 401) {
+      // Clear any stale session data
+      document.cookie = 'auth_session=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+
+      // Redirect to login page (preserve current path for redirect after login)
+      const currentPath = window.location.pathname;
+      if (currentPath !== '/login') {
+        window.location.href = '/login';
+      }
+      throw new Error('Session expired. Please log in again.');
+    }
+
     // Check if response is JSON before trying to parse
     const contentType = response.headers.get('content-type');
     if (contentType && contentType.includes('application/json')) {

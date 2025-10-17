@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const cron = require('node-cron');
 const db = require('../db/queries');
 const { executeJob } = require('../services/scheduler');
 
@@ -14,11 +15,18 @@ router.get('/', (req, res) => {
 
 router.post('/', (req, res) => {
   try {
-    const { log_source_id, destination_type, influx_config_id, postgres_config_id } = req.body;
+    const { log_source_id, destination_type, influx_config_id, postgres_config_id, cron_schedule } = req.body;
 
     // Validate required fields
     if (!log_source_id) {
       return res.status(400).json({ error: 'log_source_id is required' });
+    }
+
+    // Validate cron schedule format
+    if (cron_schedule && !cron.validate(cron_schedule)) {
+      return res.status(400).json({
+        error: 'Invalid cron schedule format. Examples: "*/5 * * * *" (every 5 min), "0 * * * *" (hourly), "0 0 * * *" (daily)'
+      });
     }
 
     // Validate destination config based on type
@@ -61,6 +69,15 @@ router.post('/', (req, res) => {
 
 router.put('/:id', (req, res) => {
   try {
+    const { cron_schedule } = req.body;
+
+    // Validate cron schedule format if provided
+    if (cron_schedule && !cron.validate(cron_schedule)) {
+      return res.status(400).json({
+        error: 'Invalid cron schedule format. Examples: "*/5 * * * *" (every 5 min), "0 * * * *" (hourly), "0 0 * * *" (daily)'
+      });
+    }
+
     db.updateJob(req.params.id, req.body);
     res.json({ message: 'Job updated' });
   } catch (error) {

@@ -1,3 +1,6 @@
+// Load environment variables
+require('dotenv').config();
+
 // Pre-load modules for pkg compatibility
 require('./pkg-preload');
 
@@ -7,6 +10,7 @@ const fs = require('fs');
 const cookieParser = require('cookie-parser');
 const { initDatabase } = require('./db/init');
 const { startScheduler } = require('./services/scheduler');
+const { globalErrorHandler } = require('./utils/errorHandler');
 const routes = require('./routes');
 
 const app = express();
@@ -18,8 +22,9 @@ const PORT = process.env.PORT || 3003;
 const IS_PKG = typeof process.pkg !== 'undefined';
 const ROOT_DIR = IS_PKG ? path.dirname(process.execPath) : path.join(__dirname, '..');
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// Request body size limits to prevent DoS attacks
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser());
 
 // CORS configuration - configurable via environment variable
@@ -72,6 +77,9 @@ app.use((req, res, next) => {
   }
   next();
 });
+
+// Global error handler - catches all unhandled errors in routes
+app.use(globalErrorHandler);
 
 // Serve frontend (from embedded assets when packaged, or from dist in dev)
 // In pkg, assets are in /snapshot/o11yControlCenter/client/dist

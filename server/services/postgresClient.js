@@ -46,6 +46,9 @@ class PostgresClient {
     // Track flush errors for reporting to activity logs
     this.flushErrors = [];
 
+    // Mutex to prevent concurrent flushes
+    this.flushing = false;
+
     console.log(`[PostgresClient] Initializing for config "${config.name}" (ID: ${config.id})`);
     console.log(`[PostgresClient] Target: ${config.host}:${config.port}/${config.database}`);
     console.log(`[PostgresClient] Table: ${this.schemaName}.${this.tableName}`);
@@ -189,6 +192,12 @@ ${tagColumnsDef}${tagColumnsDef ? ',' : ''}
    * Flush the batch to PostgreSQL with ON CONFLICT handling
    */
   async flush() {
+    // Mutex: prevent concurrent flushes
+    if (this.flushing) {
+      console.log('[PostgresClient] Flush already in progress, skipping concurrent flush');
+      return;
+    }
+
     // If there are accumulated errors from previous flushes, throw them first
     if (this.flushErrors.length > 0 && this.batch.length === 0) {
       const errorSummary = `PostgreSQL encountered ${this.flushErrors.length} flush error(s): ${this.flushErrors[0].error}`;
@@ -200,6 +209,9 @@ ${tagColumnsDef}${tagColumnsDef ? ',' : ''}
     }
 
     if (this.batch.length === 0) return;
+
+    // Set flush lock
+    this.flushing = true;
 
     const batchSize = this.batch.length;
     console.log(`[PostgresClient] Flushing ${batchSize} records to PostgreSQL...`);
@@ -269,6 +281,9 @@ ${tagColumnsDef}${tagColumnsDef ? ',' : ''}
 
       // Don't clear batch on error - will retry on next flush
       throw error;
+    } finally {
+      // Release flush lock
+      this.flushing = false;
     }
   }
 
@@ -325,9 +340,9 @@ ${tagColumnsDef}${tagColumnsDef ? ',' : ''}
   /**
    * Destructor-like cleanup method
    */
-  destroy() {
+  async destroy() {
     console.log(`[PostgresClient] Destroying client for ${this.configName}`);
-    this.stop();
+    await this.stop();
   }
 
   /**

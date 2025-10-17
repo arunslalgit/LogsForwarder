@@ -32,6 +32,11 @@ export default function ActivityLogs() {
     applyFilters();
   }, [logs, searchText, levelFilter, sourceTypeFilter, destinationTypeFilter, jobIdFilter]);
 
+  // Reset page to 1 when filters change
+  useEffect(() => {
+    setPage(1);
+  }, [searchText, levelFilter, sourceTypeFilter, destinationTypeFilter, jobIdFilter]);
+
   async function loadLogs() {
     try {
       const data = await api.getActivityLogs(pageSize, (page - 1) * pageSize);

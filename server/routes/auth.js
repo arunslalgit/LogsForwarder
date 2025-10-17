@@ -1,10 +1,29 @@
 const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const rateLimit = require('express-rate-limit');
 const { getDatabase } = require('../db/init');
 
-// Login endpoint
-router.post('/login', async (req, res) => {
+// JWT configuration
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  console.error('FATAL: JWT_SECRET environment variable not set!');
+  console.error('Please create a .env file with a secure JWT_SECRET');
+  process.exit(1);
+}
+
+// Rate limiter for login endpoint - 5 attempts per 15 minutes per IP
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // Limit each IP to 5 requests per windowMs
+  message: 'Too many login attempts from this IP, please try again after 15 minutes',
+  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+});
+
+// Login endpoint with rate limiting
+router.post('/login', loginLimiter, async (req, res) => {
   try {
     const { username, password } = req.body;
 
@@ -25,10 +44,17 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ success: false, error: 'Invalid credentials' });
     }
 
-    // Set HTTP-only cookie with user session
-    res.cookie('auth_session', JSON.stringify({ userId: user.id, username: user.username }), {
+    // Generate JWT token with expiration (24 hours)
+    const token = jwt.sign(
+      { userId: user.id, username: user.username },
+      JWT_SECRET,
+      { expiresIn: '24h' }
+    );
+
+    // Set HTTP-only cookie with JWT
+    res.cookie('auth_session', token, {
       httpOnly: true,
-      maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+      maxAge: 24 * 60 * 60 * 1000, // 24 hours (match JWT expiration)
       sameSite: 'strict'
     });
 
@@ -57,9 +83,12 @@ router.get('/check', (req, res) => {
   }
 
   try {
-    const session = JSON.parse(authCookie);
+    // Verify JWT signature and expiration
+    const session = jwt.verify(authCookie, JWT_SECRET);
     res.json({ authenticated: true, user: { id: session.userId, username: session.username } });
   } catch (error) {
+    // JWT verification failed (invalid signature, expired, etc.)
+    res.clearCookie('auth_session');
     res.json({ authenticated: false });
   }
 });
@@ -73,7 +102,8 @@ router.post('/change-password', async (req, res) => {
       return res.status(401).json({ success: false, error: 'Not authenticated' });
     }
 
-    const session = JSON.parse(authCookie);
+    // Verify JWT signature and expiration
+    const session = jwt.verify(authCookie, JWT_SECRET);
     const { currentPassword, newPassword } = req.body;
 
     if (!currentPassword || !newPassword) {

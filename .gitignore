@@ -34,3 +34,4 @@ coverage/
 .nyc_output/
 *.md
 logs_another.txt
+tests/

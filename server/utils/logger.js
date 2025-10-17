@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { redactSensitiveFields } = require('./sanitize');
 
 class Logger {
   constructor(logDir, options = {}) {
@@ -30,7 +31,9 @@ class Logger {
     let logLine = `[${timestamp}] [${level.toUpperCase()}] ${message}`;
 
     if (metadata) {
-      logLine += ` ${JSON.stringify(metadata)}`;
+      // Sanitize sensitive fields before logging
+      const sanitizedMetadata = redactSensitiveFields(metadata);
+      logLine += ` ${JSON.stringify(sanitizedMetadata)}`;
     }
 
     return logLine + '\n';

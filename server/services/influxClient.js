@@ -264,9 +264,9 @@ class InfluxClient {
   }
 
   // Destructor-like cleanup method
-  destroy() {
+  async destroy() {
     console.log(`[InfluxClient] Destroying client for ${this.configName}`);
-    this.stop();
+    await this.stop();
   }
 }
 
