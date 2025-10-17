@@ -105,6 +105,28 @@ function runMigrations(db) {
   } catch (error) {
     console.error('Max lookback migration error:', error.message);
   }
+
+  // Migration: Add PostgreSQL destination support to jobs
+  try {
+    const jobsInfo = db.prepare("PRAGMA table_info(jobs)").all();
+    const hasDestinationType = jobsInfo.some(col => col.name === 'destination_type');
+    const hasPostgresConfigId = jobsInfo.some(col => col.name === 'postgres_config_id');
+
+    if (!hasDestinationType) {
+      console.log('Running migration: Adding destination_type column to jobs');
+      db.prepare("ALTER TABLE jobs ADD COLUMN destination_type TEXT DEFAULT 'influxdb' CHECK(destination_type IN ('influxdb', 'postgresql'))").run();
+    }
+    if (!hasPostgresConfigId) {
+      console.log('Running migration: Adding postgres_config_id column to jobs');
+      db.prepare("ALTER TABLE jobs ADD COLUMN postgres_config_id INTEGER REFERENCES postgres_configs(id)").run();
+    }
+
+    if (!hasDestinationType || !hasPostgresConfigId) {
+      console.log('✓ PostgreSQL destination migration completed');
+    }
+  } catch (error) {
+    console.error('PostgreSQL destination migration error:', error.message);
+  }
 }
 
 function ensureAdminUser(db) {

@@ -3,6 +3,7 @@ const db = require('../db/queries');
 const { LogSourceFactory } = require('./logSourceFactory');
 const { LogProcessor } = require('./processor');
 const { InfluxClient } = require('./influxClient');
+const { PostgresClient } = require('./postgresClient');
 const { getLogger } = require('../utils/logger');
 
 const activeTasks = new Map();
@@ -82,13 +83,34 @@ async function executeJob(job) {
     }
     console.log(`[Scheduler] ✓ Log Source: "${logSource.name}" (${logSource.source_type})`);
 
-    const influxConfig = db.getInfluxConfig(job.influx_config_id);
-    if (!influxConfig || !influxConfig.enabled) {
-      console.log(`[Scheduler] ✗ Job ${job.id} skipped: InfluxDB config ${job.influx_config_id} disabled or not found`);
-      logger.warn(`Job skipped: InfluxDB config disabled or not found`, { jobId: job.id, influxConfigId: job.influx_config_id });
+    // Validate destination config based on destination type
+    const destinationType = job.destination_type || 'influxdb';
+    console.log(`[Scheduler] Destination Type: ${destinationType}`);
+
+    let destinationConfig;
+    if (destinationType === 'influxdb') {
+      const influxConfig = db.getInfluxConfig(job.influx_config_id);
+      if (!influxConfig || !influxConfig.enabled) {
+        console.log(`[Scheduler] ✗ Job ${job.id} skipped: InfluxDB config ${job.influx_config_id} disabled or not found`);
+        logger.warn(`Job skipped: InfluxDB config disabled or not found`, { jobId: job.id, influxConfigId: job.influx_config_id });
+        return;
+      }
+      console.log(`[Scheduler] ✓ InfluxDB Config: "${influxConfig.name}" (${influxConfig.url}/${influxConfig.database})`);
+      destinationConfig = influxConfig;
+    } else if (destinationType === 'postgresql') {
+      const postgresConfig = db.getPostgresConfig(job.postgres_config_id);
+      if (!postgresConfig || !postgresConfig.enabled) {
+        console.log(`[Scheduler] ✗ Job ${job.id} skipped: PostgreSQL config ${job.postgres_config_id} disabled or not found`);
+        logger.warn(`Job skipped: PostgreSQL config disabled or not found`, { jobId: job.id, postgresConfigId: job.postgres_config_id });
+        return;
+      }
+      console.log(`[Scheduler] ✓ PostgreSQL Config: "${postgresConfig.name}" (${postgresConfig.host}:${postgresConfig.port}/${postgresConfig.database})`);
+      destinationConfig = postgresConfig;
+    } else {
+      console.log(`[Scheduler] ✗ Job ${job.id} skipped: Unknown destination type "${destinationType}"`);
+      logger.error(`Job skipped: unknown destination type`, { jobId: job.id, destinationType });
       return;
     }
-    console.log(`[Scheduler] ✓ InfluxDB Config: "${influxConfig.name}" (${influxConfig.url}/${influxConfig.database})`);
 
     const regexPatterns = db.getRegexPatterns(job.log_source_id);
     if (regexPatterns.length === 0) {
@@ -110,8 +132,7 @@ async function executeJob(job) {
 
     console.log(`[Scheduler] Creating clients and processor...`);
 
-    // Reconstruct log source and influx config objects from job data
-    // (getEnabledJobs returns flattened data with aliased columns)
+    // Reconstruct log source object from job data
     const logSourceData = {
       id: job.log_source_id,
       name: job.log_source_name,
@@ -130,25 +151,50 @@ async function executeJob(job) {
       proxy_password: job.ls_proxy_password
     };
 
-    const influxConfigData = {
-      id: job.influx_config_id,
-      name: job.influx_config_name,
-      url: job.influx_url,
-      database: job.influx_database,
-      username: job.influx_username,
-      password: job.influx_password,
-      measurement_name: job.measurement_name,
-      batch_size: job.batch_size,
-      batch_interval_seconds: job.batch_interval_seconds,
-      proxy_url: job.ic_proxy_url,
-      proxy_username: job.ic_proxy_username,
-      proxy_password: job.ic_proxy_password,
-      timestamp_format: job.timestamp_format
-    };
+    // Create destination client based on type
+    let destinationClient;
+    if (destinationType === 'influxdb') {
+      const influxConfigData = {
+        id: job.influx_config_id,
+        name: job.influx_config_name,
+        url: job.influx_url,
+        database: job.influx_database,
+        username: job.influx_username,
+        password: job.influx_password,
+        measurement_name: job.measurement_name,
+        batch_size: job.batch_size,
+        batch_interval_seconds: job.batch_interval_seconds,
+        proxy_url: job.ic_proxy_url,
+        proxy_username: job.ic_proxy_username,
+        proxy_password: job.ic_proxy_password,
+        timestamp_format: job.timestamp_format
+      };
+      destinationClient = new InfluxClient(influxConfigData);
+    } else if (destinationType === 'postgresql') {
+      const postgresConfigData = {
+        id: job.postgres_config_id,
+        name: job.postgres_config_name,
+        host: job.pg_host,
+        port: job.pg_port,
+        database: job.pg_database,
+        username: job.pg_username,
+        password: job.pg_password,
+        schema_name: job.pg_schema,
+        table_name: job.pg_table,
+        dedup_keys: job.pg_dedup_keys,
+        tag_columns_schema: job.pg_tag_columns_schema,
+        auto_create_table: job.pg_auto_create_table,
+        batch_size: job.pg_batch_size,
+        batch_interval_seconds: job.pg_batch_interval_seconds,
+        proxy_url: job.pc_proxy_url,
+        proxy_username: job.pc_proxy_username,
+        proxy_password: job.pc_proxy_password
+      };
+      destinationClient = new PostgresClient(postgresConfigData);
+    }
 
     const sourceClient = LogSourceFactory.createClient(logSourceData);
     const queryFilter = LogSourceFactory.getQueryFilter(logSourceData);
-    const influxClient = new InfluxClient(influxConfigData);
     const processor = new LogProcessor(regexPatterns[0].pattern, tagMappings);
     console.log(`[Scheduler] ✓ All clients and processor initialized`);
 
@@ -249,8 +295,8 @@ async function executeJob(job) {
           continue;
         }
 
-        const influxPoint = processor.mapToInflux(log, jsonContent);
-        influxClient.add(influxPoint);
+        const point = processor.mapToInflux(log, jsonContent);
+        destinationClient.add(point);
         processed++;
 
         // Log progress every 100 logs
@@ -281,15 +327,16 @@ async function executeJob(job) {
       processingMs: processingDuration
     });
 
-    // Flush remaining points to InfluxDB
-    console.log(`[Scheduler] Flushing remaining points to InfluxDB...`);
+    // Flush remaining points to destination
+    console.log(`[Scheduler] Flushing remaining points to ${destinationType}...`);
     try {
-      await influxClient.flush();
-      console.log(`[Scheduler] ✓ All points flushed to InfluxDB`);
+      await destinationClient.flush();
+      console.log(`[Scheduler] ✓ All points flushed to ${destinationType}`);
     } catch (flushError) {
-      console.error(`[Scheduler] ✗ InfluxDB flush failed:`, flushError.message);
-      logger.error(`InfluxDB flush failed`, {
+      console.error(`[Scheduler] ✗ ${destinationType} flush failed:`, flushError.message);
+      logger.error(`Destination flush failed`, {
         jobId: job.id,
+        destinationType,
         error: flushError.message,
         stack: flushError.stack,
         processed: processed,
@@ -306,7 +353,8 @@ async function executeJob(job) {
       total_fetched: logs.length,
       sample_failures: failureDetails.slice(0, 5), // First 5 failures
       log_source: logSource.name,
-      influx_config: influxConfig.name,
+      destination_type: destinationType,
+      destination_config: destinationConfig.name,
       query_window: {
         start: queryStart.toISOString(),
         end: now.toISOString()
@@ -343,7 +391,8 @@ async function executeJob(job) {
       failed,
       successRate: successRate + '%',
       logSource: logSource.name,
-      influxConfig: influxConfig.name
+      destinationType,
+      destinationConfig: destinationConfig.name
     });
 
   } catch (error) {
@@ -369,8 +418,9 @@ async function executeJob(job) {
       job_config: {
         log_source_id: job.log_source_id,
         log_source_name: logSource?.name,
-        influx_config_id: job.influx_config_id,
-        influx_config_name: influxConfig?.name,
+        destination_type: destinationType,
+        destination_config_id: destinationType === 'influxdb' ? job.influx_config_id : job.postgres_config_id,
+        destination_config_name: destinationConfig?.name,
         lookback_minutes: job.lookback_minutes || 5,
         max_lookback_minutes: job.max_lookback_minutes || 30
       }

@@ -10,6 +10,9 @@ import RegexPatterns from './pages/RegexPatterns';
 import TagMappings from './pages/TagMappings';
 import InfluxConfigs from './pages/InfluxConfigs';
 import InfluxConfigForm from './pages/InfluxConfigForm';
+import PostgresConfigs from './pages/PostgresConfigs';
+import PostgresConfigForm from './pages/PostgresConfigForm';
+import PostgresExplorer from './pages/PostgresExplorer';
 import InfluxExplorer from './pages/InfluxExplorer';
 import SQLiteExplorer from './pages/SQLiteExplorer';
 import Jobs from './pages/Jobs';
@@ -47,6 +50,10 @@ export default function App() {
         <Route path="/influx-configs" element={<InfluxConfigs />} />
         <Route path="/influx-configs/new" element={<InfluxConfigForm />} />
         <Route path="/influx-configs/:id/edit" element={<InfluxConfigForm />} />
+        <Route path="/postgres-configs" element={<PostgresConfigs />} />
+        <Route path="/postgres-configs/new" element={<PostgresConfigForm />} />
+        <Route path="/postgres-configs/:id/edit" element={<PostgresConfigForm />} />
+        <Route path="/postgres-explorer" element={<PostgresExplorer />} />
         <Route path="/influx-explorer" element={<InfluxExplorer />} />
         <Route path="/sqlite-explorer" element={<SQLiteExplorer />} />
         <Route path="/jobs" element={<Jobs />} />

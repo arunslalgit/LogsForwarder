@@ -1,4 +1,4 @@
-import type { LogSource, RegexPattern, TagMapping, InfluxConfig, Job, ActivityLog } from '../types';
+import type { LogSource, RegexPattern, TagMapping, InfluxConfig, PostgresConfig, Job, ActivityLog } from '../types';
 
 // Dynamically determine BASE_URL from the page's actual location
 // This allows the same build to work with any BASE_PATH at runtime
@@ -105,6 +105,26 @@ export const api = {
     body: JSON.stringify(data),
   }),
 
+  getPostgresConfigs: () => request<PostgresConfig[]>('/postgres-configs'),
+  getPostgresConfig: (id: number) => request<PostgresConfig>(`/postgres-configs/${id}`),
+  createPostgresConfig: (data: Partial<PostgresConfig>) => request<{ id: number; message: string }>('/postgres-configs', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  }),
+  updatePostgresConfig: (id: number, data: Partial<PostgresConfig>) => request<{ message: string }>(`/postgres-configs/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  }),
+  deletePostgresConfig: (id: number) => request<{ message: string }>(`/postgres-configs/${id}`, { method: 'DELETE' }),
+  testPostgresConnection: (data: Partial<PostgresConfig>) => request<{ success: boolean; message?: string; error?: string; schema_exists?: boolean; table_exists?: boolean }>('/postgres-configs/test-connection', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  }),
+  recommendPostgresSchema: (log_source_id: number) => request<{ success: boolean; schema: any[]; tag_count: number; field_count: number; message: string; error?: string }>('/postgres-configs/recommend-schema', {
+    method: 'POST',
+    body: JSON.stringify({ log_source_id }),
+  }),
+
   getJobs: () => request<Job[]>('/jobs'),
   createJob: (data: Partial<Job>) => request<{ id: number; message: string }>('/jobs', {
     method: 'POST',
@@ -127,5 +147,21 @@ export const api = {
     request<{ success: boolean; lines?: string[]; samples_processed?: number; tags_extracted?: number; fields_extracted?: number; extraction_errors?: string[]; timestamp_info?: any; error?: string }>('/tag-mappings/preview-influx', {
       method: 'POST',
       body: JSON.stringify(data),
+    }),
+
+  postgresQuery: (postgres_config_id: number, query: string) =>
+    request<{ success: boolean; rows: any[]; rowCount: number; fields: any[]; error?: string }>('/postgres-explorer/query', {
+      method: 'POST',
+      body: JSON.stringify({ postgres_config_id, query }),
+    }),
+  postgresSchemas: (postgres_config_id: number) =>
+    request<{ success: boolean; schemas: string[]; error?: string }>('/postgres-explorer/schemas', {
+      method: 'POST',
+      body: JSON.stringify({ postgres_config_id }),
+    }),
+  postgresTables: (postgres_config_id: number, schema_name: string) =>
+    request<{ success: boolean; tables: string[]; error?: string }>('/postgres-explorer/tables', {
+      method: 'POST',
+      body: JSON.stringify({ postgres_config_id, schema_name }),
     }),
 };

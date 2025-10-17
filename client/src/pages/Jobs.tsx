@@ -105,7 +105,7 @@ export default function Jobs() {
           <Table.Tr>
             <Table.Th>ID</Table.Th>
             <Table.Th>Log Source</Table.Th>
-            <Table.Th>InfluxDB Config</Table.Th>
+            <Table.Th>Destination</Table.Th>
             <Table.Th>Schedule</Table.Th>
             <Table.Th>Lookback</Table.Th>
             <Table.Th>Max Lookback</Table.Th>
@@ -122,7 +122,12 @@ export default function Jobs() {
                 <Text size="sm">{job.log_source_name}</Text>
                 {job.source_type && <Badge size="xs" variant="light">{job.source_type}</Badge>}
               </Table.Td>
-              <Table.Td>{job.influx_config_name}</Table.Td>
+              <Table.Td>
+                <Text size="sm">{job.destination_type === 'postgresql' ? job.postgres_config_name : job.influx_config_name}</Text>
+                <Badge size="xs" variant="light" color={job.destination_type === 'postgresql' ? 'blue' : 'cyan'}>
+                  {job.destination_type === 'postgresql' ? 'PostgreSQL' : 'InfluxDB'}
+                </Badge>
+              </Table.Td>
               <Table.Td><Text ff="monospace" size="sm">{job.cron_schedule}</Text></Table.Td>
               <Table.Td>
                 <Text size="sm">{job.lookback_minutes || 5} min</Text>

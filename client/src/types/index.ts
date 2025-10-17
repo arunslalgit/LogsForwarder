@@ -53,10 +53,42 @@ export interface InfluxConfig {
   created_at: string;
 }
 
+export interface TagColumnSchema {
+  name: string;
+  type: 'TEXT' | 'INTEGER' | 'REAL' | 'BOOLEAN' | 'TIMESTAMP';
+  required?: boolean;
+  indexed?: boolean;
+}
+
+export interface PostgresConfig {
+  id: number;
+  name: string;
+  host: string;
+  port: number;
+  database: string;
+  username?: string;
+  password?: string;
+  schema_name: string;
+  table_name: string;
+  dedup_keys: string;
+  tag_columns_schema: string; // JSON string
+  auto_create_table: number;
+  batch_size: number;
+  batch_interval_seconds: number;
+  proxy_url?: string;
+  proxy_username?: string;
+  proxy_password?: string;
+  enabled: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Job {
   id: number;
   log_source_id: number;
-  influx_config_id: number;
+  destination_type: 'influxdb' | 'postgresql';
+  influx_config_id?: number;
+  postgres_config_id?: number;
   cron_schedule: string;
   lookback_minutes: number;
   max_lookback_minutes: number;
@@ -66,6 +98,7 @@ export interface Job {
   log_source_name?: string;
   source_type?: string;
   influx_config_name?: string;
+  postgres_config_name?: string;
 }
 
 export interface ActivityLog {
