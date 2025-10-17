@@ -5,27 +5,34 @@ import type { LogSource, RegexPattern, TagMapping, InfluxConfig, PostgresConfig,
 // If app is served at /forwarder/, this returns /forwarder/api
 // If app is served at /, this returns /api
 function getBaseUrl() {
-  const pathname = window.location.pathname;
-  // Extract base path from pathname (everything before /api or first route segment)
-  // Examples: /forwarder/log-sources -> /forwarder, /log-sources -> '', /forwarder/ -> /forwarder
-  const segments = pathname.split('/').filter(Boolean);
+  // Use a simple approach: check for basename in the document
+  // The BrowserRouter basename is set in main.tsx
+  const basename = (document.querySelector('base')?.getAttribute('href') || '/').replace(/\/$/, '');
 
-  // If first segment exists and isn't a known route, it's likely the base path
-  const knownRoutes = [
-    'log-sources', 'influx-configs', 'postgres-configs', 'jobs',
-    'regex-patterns', 'tag-mappings', 'sqlite-explorer', 'dashboard',
-    'influx-explorer', 'postgres-explorer', 'activity-logs', 'change-password'
-  ];
-  if (segments.length > 0 && !knownRoutes.includes(segments[0])) {
-    return `/${segments[0]}/api`;
+  // If there's no base tag, infer from pathname
+  if (!basename || basename === '/') {
+    const pathname = window.location.pathname;
+    const segments = pathname.split('/').filter(Boolean);
+
+    // Known application routes (not base paths)
+    const knownRoutes = [
+      'log-sources', 'influx-configs', 'postgres-configs', 'jobs',
+      'regex-patterns', 'tag-mappings', 'sqlite-explorer', 'dashboard',
+      'influx-explorer', 'postgres-explorer', 'activity-logs', 'change-password', 'login'
+    ];
+
+    // If first segment is NOT a known route, it's the base path
+    if (segments.length > 0 && !knownRoutes.includes(segments[0])) {
+      return `/${segments[0]}/api`;
+    }
   }
 
   return '/api';
 }
 
-const BASE_URL = getBaseUrl();
-
 async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+  // Get BASE_URL dynamically on each request to avoid stale path issues
+  const BASE_URL = getBaseUrl();
   const response = await fetch(`${BASE_URL}${endpoint}`, {
     headers: {
       'Content-Type': 'application/json',

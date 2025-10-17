@@ -59,6 +59,7 @@ class InfluxClient {
     this.batch = [];
     this.batchSize = config.batch_size || 100;
     this.batchInterval = (config.batch_interval_seconds || 10) * 1000;
+    this.shuttingDown = false;
 
     console.log(`[InfluxClient] Batch settings: size=${this.batchSize}, interval=${this.batchInterval}ms`);
     this.logger.info('InfluxClient batch settings', {
@@ -126,6 +127,11 @@ class InfluxClient {
   }
 
   async flush() {
+    if (this.shuttingDown) {
+      console.log('[InfluxClient] Client shutting down, skipping flush');
+      return;
+    }
+
     if (this.batch.length === 0) {
       console.log(`[InfluxClient] Flush called but batch is empty, skipping`);
       return;
@@ -254,13 +260,26 @@ class InfluxClient {
     }, this.batchInterval);
   }
 
-  stop() {
+  async stop() {
     console.log(`[InfluxClient] Stopping client for ${this.configName}`);
+
+    // Set shutdown flag to prevent new flushes from timer
+    this.shuttingDown = true;
+
+    // Clear timer first
     if (this.timer) {
       clearInterval(this.timer);
       this.timer = null;
     }
-    return this.flush();
+
+    // Do final flush of remaining data (if any)
+    if (this.batch.length > 0) {
+      console.log(`[InfluxClient] Final flush of ${this.batch.length} remaining points`);
+      this.shuttingDown = false; // Temporarily allow this final flush
+      await this.flush().catch(err => {
+        console.error(`[InfluxClient] Final flush error:`, err.message);
+      });
+    }
   }
 
   // Destructor-like cleanup method

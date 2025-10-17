@@ -48,6 +48,7 @@ class PostgresClient {
 
     // Mutex to prevent concurrent flushes
     this.flushing = false;
+    this.shuttingDown = false;
 
     console.log(`[PostgresClient] Initializing for config "${config.name}" (ID: ${config.id})`);
     console.log(`[PostgresClient] Target: ${config.host}:${config.port}/${config.database}`);
@@ -192,6 +193,12 @@ ${tagColumnsDef}${tagColumnsDef ? ',' : ''}
    * Flush the batch to PostgreSQL with ON CONFLICT handling
    */
   async flush() {
+    // Don't flush if we're shutting down
+    if (this.shuttingDown) {
+      console.log('[PostgresClient] Client shutting down, skipping flush');
+      return;
+    }
+
     // Mutex: prevent concurrent flushes
     if (this.flushing) {
       console.log('[PostgresClient] Flush already in progress, skipping concurrent flush');
@@ -323,12 +330,34 @@ ${tagColumnsDef}${tagColumnsDef ? ',' : ''}
    */
   async stop() {
     console.log(`[PostgresClient] Stopping client for ${this.configName}`);
+
+    // Set shutdown flag to prevent new flushes from timer
+    this.shuttingDown = true;
+
+    // Clear timer first
     if (this.timer) {
       clearInterval(this.timer);
       this.timer = null;
     }
 
-    await this.flush();
+    // Wait for any in-progress flush to complete
+    let retries = 0;
+    while (this.flushing && retries < 50) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+      retries++;
+    }
+
+    // Do final flush of remaining data (if any)
+    if (this.batch.length > 0) {
+      console.log(`[PostgresClient] Final flush of ${this.batch.length} remaining records`);
+      this.shuttingDown = false; // Temporarily allow this final flush
+      await this.flush().catch(err => {
+        console.error(`[PostgresClient] Final flush error:`, err.message);
+      });
+      this.shuttingDown = true;
+    }
+
+    // Close connection pool
     await this.pool.end();
 
     this.logger.info('PostgresClient stopped', {
