@@ -22,8 +22,12 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
+// CORS configuration - configurable via environment variable
+// Set ALLOWED_ORIGINS=http://localhost:3000 for specific origin
+// Defaults to '*' for development convenience
+const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS || '*';
 app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Origin', ALLOWED_ORIGINS);
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE');
   res.header('Access-Control-Allow-Headers', 'Content-Type');
   next();

@@ -59,6 +59,7 @@ export interface Job {
   influx_config_id: number;
   cron_schedule: string;
   lookback_minutes: number;
+  max_lookback_minutes: number;
   last_run?: string;
   last_success?: string;
   enabled: number;

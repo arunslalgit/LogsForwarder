@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Container, Title, Paper, Select, Textarea, Button, Table, Code, Text, Group, Alert, Badge, Tabs, Stack, LoadingOverlay, TextInput } from '@mantine/core';
-import { IconDatabase, IconPlayerPlay, IconRefresh, IconInfoCircle, IconTable, IconChartLine, IconPencil } from '@tabler/icons-react';
+import { Container, Title, Paper, Select, Textarea, Button, Table, Code, Text, Group, Alert, Badge, Tabs, Stack, LoadingOverlay, Switch } from '@mantine/core';
+import { IconDatabase, IconPlayerPlay, IconRefresh, IconInfoCircle, IconTable, IconChartLine, IconPencil, IconHistory, IconClock } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
 import { api } from '../api/client';
 import type { InfluxConfig } from '../types';
@@ -17,9 +17,12 @@ export default function InfluxExplorer() {
   const [writeData, setWriteData] = useState('test_measurement,tag1=value1 field1=123,field2="test" 1697463600000');
   const [writeResult, setWriteResult] = useState<any>(null);
   const [writePrecision, setWritePrecision] = useState('ms');
+  const [queryHistory, setQueryHistory] = useState<string[]>([]);
+  const [showEpochTime, setShowEpochTime] = useState(false);
 
   useEffect(() => {
     loadConfigs();
+    loadQueryHistory();
   }, []);
 
   useEffect(() => {
@@ -32,6 +35,26 @@ export default function InfluxExplorer() {
       }
     }
   }, [selectedConfigId, configs]);
+
+  function loadQueryHistory() {
+    try {
+      const saved = localStorage.getItem('influx_query_history');
+      if (saved) {
+        setQueryHistory(JSON.parse(saved));
+      }
+    } catch (error) {
+      console.error('Failed to load query history:', error);
+    }
+  }
+
+  function saveToHistory(query: string) {
+    const trimmed = query.trim();
+    if (!trimmed || trimmed.length < 5) return; // Don't save very short queries
+
+    const newHistory = [trimmed, ...queryHistory.filter(q => q !== trimmed)].slice(0, 20); // Keep last 20
+    setQueryHistory(newHistory);
+    localStorage.setItem('influx_query_history', JSON.stringify(newHistory));
+  }
 
   async function loadConfigs() {
     try {
@@ -89,6 +112,7 @@ export default function InfluxExplorer() {
         setQueryResult({ error: data.error });
       } else {
         setQueryResult(data);
+        saveToHistory(query); // Save successful query to history
         notifications.show({ title: 'Success', message: 'Query executed successfully', color: 'green' });
       }
     } catch (error: any) {
@@ -142,10 +166,29 @@ export default function InfluxExplorer() {
     }
   }
 
-  function formatTimestamp(ts: number | string) {
+  function formatTimestamp(ts: number | string, showEpoch: boolean) {
     if (!ts) return '';
-    const date = new Date(typeof ts === 'string' ? parseInt(ts) : ts);
-    return date.toLocaleString();
+
+    const timestamp = typeof ts === 'string' ? parseInt(ts) : ts;
+
+    // If showing epoch time, just return the raw timestamp
+    if (showEpoch) {
+      return String(timestamp);
+    }
+
+    // Otherwise show human-readable with milliseconds
+    const date = new Date(timestamp);
+
+    // Format: DD/MM/YYYY, HH:mm:ss.SSS
+    const day = String(date.getDate()).padStart(2, '0');
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const year = date.getFullYear();
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    const seconds = String(date.getSeconds()).padStart(2, '0');
+    const milliseconds = String(date.getMilliseconds()).padStart(3, '0');
+
+    return `${day}/${month}/${year}, ${hours}:${minutes}:${seconds}.${milliseconds}`;
   }
 
   function renderResults() {
@@ -169,8 +212,21 @@ export default function InfluxExplorer() {
     }
 
     return (
-      <Paper withBorder p="md" mt="md">
-        {queryResult.results.map((result: any, resultIdx: number) => {
+      <>
+        <Group justify="space-between" mt="md" mb="sm">
+          <Text size="sm" fw={500}>Query Results</Text>
+          <Group gap="xs">
+            <IconClock size={16} />
+            <Switch
+              label="Show Epoch Time"
+              checked={showEpochTime}
+              onChange={(event) => setShowEpochTime(event.currentTarget.checked)}
+              size="sm"
+            />
+          </Group>
+        </Group>
+        <Paper withBorder p="md">
+          {queryResult.results.map((result: any, resultIdx: number) => {
           if (!result.series || result.series.length === 0) {
             return (
               <Alert key={resultIdx} color="blue" icon={<IconInfoCircle size={16} />}>
@@ -210,7 +266,7 @@ export default function InfluxExplorer() {
                           <Table.Td key={cellIdx}>
                             <Text size="sm" ff={series.columns[cellIdx] === 'time' ? 'monospace' : undefined}>
                               {series.columns[cellIdx] === 'time'
-                                ? formatTimestamp(cell)
+                                ? formatTimestamp(cell, showEpochTime)
                                 : cell === null
                                   ? <Text c="dimmed" fs="italic">null</Text>
                                   : String(cell)}
@@ -229,7 +285,8 @@ export default function InfluxExplorer() {
             </div>
           ));
         })}
-      </Paper>
+        </Paper>
+      </>
     );
   }
 
@@ -306,6 +363,9 @@ export default function InfluxExplorer() {
             </Tabs.Tab>
             <Tabs.Tab value="write" leftSection={<IconPencil size={14} />}>
               Write Test
+            </Tabs.Tab>
+            <Tabs.Tab value="history" leftSection={<IconHistory size={14} />}>
+              Query History
             </Tabs.Tab>
             <Tabs.Tab value="samples" leftSection={<IconChartLine size={14} />}>
               Sample Queries
@@ -412,6 +472,37 @@ export default function InfluxExplorer() {
                     {writeResult.error}
                   </Code>
                 )}
+              </Alert>
+            )}
+          </Tabs.Panel>
+
+          <Tabs.Panel value="history" pt="md">
+            {queryHistory.length > 0 ? (
+              <Stack gap="xs">
+                <Group justify="space-between">
+                  <Text size="sm" fw={500}>Click a query to load it:</Text>
+                  <Button
+                    size="xs"
+                    variant="light"
+                    color="red"
+                    onClick={() => {
+                      setQueryHistory([]);
+                      localStorage.removeItem('influx_query_history');
+                      notifications.show({ title: 'Cleared', message: 'Query history cleared', color: 'green' });
+                    }}
+                  >
+                    Clear History
+                  </Button>
+                </Group>
+                {queryHistory.map((q, idx) => (
+                  <Paper key={idx} withBorder p="sm" style={{ cursor: 'pointer' }} onClick={() => setQuery(q)}>
+                    <Code block style={{ fontSize: '11px' }}>{q}</Code>
+                  </Paper>
+                ))}
+              </Stack>
+            ) : (
+              <Alert color="blue" icon={<IconInfoCircle size={16} />}>
+                No query history yet. Execute queries from the Query Editor to see them here.
               </Alert>
             )}
           </Tabs.Panel>

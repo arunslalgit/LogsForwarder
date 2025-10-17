@@ -19,6 +19,7 @@ export default function JobForm() {
       influx_config_id: '',
       cron_schedule: '*/5 * * * *',
       lookback_minutes: 5,
+      max_lookback_minutes: 30,
       enabled: 1,
     },
     validate: {
@@ -26,6 +27,11 @@ export default function JobForm() {
       influx_config_id: (val) => (!val ? 'InfluxDB config required' : null),
       cron_schedule: (val) => (!val ? 'Cron schedule required' : null),
       lookback_minutes: (val) => (val < 0 ? 'Must be 0 or greater' : null),
+      max_lookback_minutes: (val) => {
+        if (val < 1) return 'Must be at least 1 minute';
+        if (val > 43200) return 'Maximum is 43200 minutes (30 days)';
+        return null;
+      },
     },
   });
 
@@ -59,6 +65,7 @@ export default function JobForm() {
           influx_config_id: String(job.influx_config_id),
           cron_schedule: job.cron_schedule,
           lookback_minutes: job.lookback_minutes || 5,
+          max_lookback_minutes: job.max_lookback_minutes || 30,
           enabled: job.enabled,
         });
       }
@@ -75,6 +82,7 @@ export default function JobForm() {
         influx_config_id: Number(values.influx_config_id),
         cron_schedule: values.cron_schedule,
         lookback_minutes: values.lookback_minutes,
+        max_lookback_minutes: values.max_lookback_minutes,
         enabled: values.enabled,
       };
 
@@ -137,6 +145,16 @@ export default function JobForm() {
             required
             mb="md"
             {...form.getInputProps('lookback_minutes')}
+          />
+          <NumberInput
+            label="Max Lookback Minutes"
+            placeholder="30"
+            description="Maximum lookback window after job downtime (1-43200 minutes / 30 days). Prevents source overload after long outages."
+            min={1}
+            max={43200}
+            required
+            mb="md"
+            {...form.getInputProps('max_lookback_minutes')}
           />
           <Switch
             label="Enabled"

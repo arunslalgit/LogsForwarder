@@ -4,6 +4,20 @@ class LogProcessor {
   constructor(regexPattern, tagMappings) {
     this.regex = new RegExp(regexPattern);
     this.tagMappings = tagMappings || [];
+
+    // Pre-compile regex patterns for tag transformations to improve performance
+    this.tagMappings.forEach(mapping => {
+      if (mapping.transform_regex) {
+        try {
+          mapping._compiledRegex = new RegExp(mapping.transform_regex);
+          mapping._compiledRegexGlobal = new RegExp(mapping.transform_regex, 'g');
+        } catch (error) {
+          console.error(`Failed to compile transform regex for ${mapping.influx_tag_name}: ${error.message}`);
+          mapping._compiledRegex = null;
+          mapping._compiledRegexGlobal = null;
+        }
+      }
+    });
   }
 
   // Helper function to extract complete JSON with balanced braces
@@ -121,18 +135,22 @@ class LogProcessor {
         // Check if this is a static tag/field
         if (mapping.is_static) {
           value = mapping.static_value;
+          // Validate static value is not null/undefined
+          if (value === undefined || value === null || value === '') {
+            console.error(`Static value for ${mapping.influx_tag_name} is empty or null`);
+            continue;
+          }
         } else {
           // Extract value using JSONPath
           value = JSONPath({ path: mapping.json_path, json: jsonContent })[0];
-          
+
           if (value === undefined || value === null) continue;
 
           // Apply regex transformation if specified
-          if (mapping.transform_regex) {
+          if (mapping.transform_regex && mapping._compiledRegex) {
             try {
               const stringValue = String(value);
-              const regex = new RegExp(mapping.transform_regex);
-              const match = stringValue.match(regex);
+              const match = stringValue.match(mapping._compiledRegex);
 
               if (match) {
                 // If there are capture groups, use the first capture group
@@ -140,11 +158,11 @@ class LogProcessor {
                   value = match[1];
                 } else {
                   // No capture groups - remove the matched pattern
-                  value = stringValue.replace(new RegExp(mapping.transform_regex, 'g'), '');
+                  value = stringValue.replace(mapping._compiledRegexGlobal, '');
                 }
               }
             } catch (regexError) {
-              console.error(`Invalid transform regex for ${mapping.influx_tag_name}:`, regexError.message);
+              console.error(`Transform regex execution error for ${mapping.influx_tag_name}:`, regexError.message);
             }
           }
         }
@@ -190,10 +208,12 @@ class LogProcessor {
         timestamp = new Date(logEntry.timestamp);
         // If invalid date, use current time
         if (isNaN(timestamp.getTime())) {
+          console.warn(`Invalid timestamp value "${logEntry.timestamp}" - falling back to current time`);
           timestamp = new Date();
         }
       }
     } else {
+      console.warn('No timestamp provided in log entry - using current time');
       timestamp = new Date();
     }
 

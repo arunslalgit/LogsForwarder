@@ -1,5 +1,10 @@
 const { getDatabase } = require('./init');
 
+// Helper function to sanitize undefined values to null for SQLite
+function sanitizeValue(value) {
+  return value === undefined ? null : value;
+}
+
 // ============= LOG SOURCES =============
 function getAllLogSources() {
   const db = getDatabase();
@@ -66,11 +71,11 @@ function updateLogSource(id, data) {
   `);
 
   return stmt.run(
-    data.name, data.dynatrace_url, data.dynatrace_token, data.dynatrace_query_filter,
-    data.splunk_url, data.splunk_token, data.splunk_search_query, data.splunk_index,
-    data.file_path, data.file_search_query,
-    data.proxy_url, data.proxy_username, data.proxy_password,
-    data.enabled, id
+    sanitizeValue(data.name), sanitizeValue(data.dynatrace_url), sanitizeValue(data.dynatrace_token), sanitizeValue(data.dynatrace_query_filter),
+    sanitizeValue(data.splunk_url), sanitizeValue(data.splunk_token), sanitizeValue(data.splunk_search_query), sanitizeValue(data.splunk_index),
+    sanitizeValue(data.file_path), sanitizeValue(data.file_search_query),
+    sanitizeValue(data.proxy_url), sanitizeValue(data.proxy_username), sanitizeValue(data.proxy_password),
+    sanitizeValue(data.enabled), id
   );
 }
 
@@ -190,14 +195,15 @@ function createInfluxConfig(data) {
   const stmt = db.prepare(`
     INSERT INTO influx_configs (
       name, url, database, username, password, measurement_name,
-      batch_size, batch_interval_seconds, proxy_url, proxy_username, proxy_password, enabled
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      batch_size, batch_interval_seconds, proxy_url, proxy_username, proxy_password, timestamp_format, enabled
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   return stmt.run(
     data.name, data.url, data.database, data.username || null, data.password || null,
     data.measurement_name, data.batch_size || 100, data.batch_interval_seconds || 10,
     data.proxy_url || null, data.proxy_username || null, data.proxy_password || null,
+    data.timestamp_format || 'nanoseconds',
     data.enabled !== undefined ? data.enabled : 1
   ).lastInsertRowid;
 }
@@ -217,6 +223,7 @@ function updateInfluxConfig(id, data) {
       proxy_url = COALESCE(?, proxy_url),
       proxy_username = COALESCE(?, proxy_username),
       proxy_password = COALESCE(?, proxy_password),
+      timestamp_format = COALESCE(?, timestamp_format),
       enabled = COALESCE(?, enabled)
     WHERE id = ?
   `);
@@ -225,6 +232,7 @@ function updateInfluxConfig(id, data) {
     data.name, data.url, data.database, data.username, data.password,
     data.measurement_name, data.batch_size, data.batch_interval_seconds,
     data.proxy_url, data.proxy_username, data.proxy_password,
+    data.timestamp_format,
     data.enabled, id
   );
 }
@@ -260,7 +268,18 @@ function getJob(id) {
 function getEnabledJobs() {
   const db = getDatabase();
   return db.prepare(`
-    SELECT j.*, ls.*, ic.*
+    SELECT
+      j.id, j.log_source_id, j.influx_config_id, j.cron_schedule,
+      j.lookback_minutes, j.max_lookback_minutes, j.last_run, j.last_success, j.enabled,
+      ls.name as log_source_name, ls.source_type, ls.dynatrace_url, ls.dynatrace_token,
+      ls.dynatrace_query_filter, ls.splunk_url, ls.splunk_token, ls.splunk_search_query,
+      ls.splunk_index, ls.file_path, ls.file_search_query, ls.proxy_url as ls_proxy_url,
+      ls.proxy_username as ls_proxy_username, ls.proxy_password as ls_proxy_password,
+      ic.name as influx_config_name, ic.url as influx_url, ic.database as influx_database,
+      ic.username as influx_username, ic.password as influx_password,
+      ic.measurement_name, ic.batch_size, ic.batch_interval_seconds,
+      ic.proxy_url as ic_proxy_url, ic.proxy_username as ic_proxy_username,
+      ic.proxy_password as ic_proxy_password, ic.timestamp_format
     FROM jobs j
     JOIN log_sources ls ON j.log_source_id = ls.id
     JOIN influx_configs ic ON j.influx_config_id = ic.id
@@ -271,8 +290,8 @@ function getEnabledJobs() {
 function createJob(data) {
   const db = getDatabase();
   const stmt = db.prepare(`
-    INSERT INTO jobs (log_source_id, influx_config_id, cron_schedule, lookback_minutes, enabled)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO jobs (log_source_id, influx_config_id, cron_schedule, lookback_minutes, max_lookback_minutes, enabled)
+    VALUES (?, ?, ?, ?, ?, ?)
   `);
 
   return stmt.run(
@@ -280,6 +299,7 @@ function createJob(data) {
     data.influx_config_id,
     data.cron_schedule || '*/5 * * * *',
     data.lookback_minutes !== undefined ? data.lookback_minutes : 5,
+    data.max_lookback_minutes !== undefined ? data.max_lookback_minutes : 30,
     data.enabled !== undefined ? data.enabled : 1
   ).lastInsertRowid;
 }
@@ -290,11 +310,12 @@ function updateJob(id, data) {
     UPDATE jobs SET
       cron_schedule = COALESCE(?, cron_schedule),
       lookback_minutes = COALESCE(?, lookback_minutes),
+      max_lookback_minutes = COALESCE(?, max_lookback_minutes),
       enabled = COALESCE(?, enabled)
     WHERE id = ?
   `);
 
-  return stmt.run(data.cron_schedule, data.lookback_minutes, data.enabled, id);
+  return stmt.run(data.cron_schedule, data.lookback_minutes, data.max_lookback_minutes, data.enabled, id);
 }
 
 function updateJobRun(jobId, success) {

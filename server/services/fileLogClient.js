@@ -93,6 +93,7 @@ class FileLogClient {
       });
 
       rl.on('error', (error) => {
+        fileStream.destroy();
         reject(error);
       });
     });

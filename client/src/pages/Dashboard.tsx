@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Container, Title, Grid, Card, Text, Badge, Table } from '@mantine/core';
 import { api } from '../api/client';
 import type { ActivityLog } from '../types';
-import dayjs from 'dayjs';
+import { formatDateTime } from '../utils/dateFormat';
 
 export default function Dashboard() {
   const [stats, setStats] = useState({ jobs: 0, sources: 0, influxConfigs: 0 });
@@ -81,7 +81,7 @@ export default function Dashboard() {
         <Table.Tbody>
           {recentLogs.map((log) => (
             <Table.Tr key={log.id}>
-              <Table.Td>{dayjs(log.timestamp).format('MMM DD HH:mm:ss')}</Table.Td>
+              <Table.Td>{formatDateTime(log.timestamp, 'short')}</Table.Td>
               <Table.Td>
                 <Badge color={getLevelColor(log.level)} size="sm">{log.level}</Badge>
               </Table.Td>

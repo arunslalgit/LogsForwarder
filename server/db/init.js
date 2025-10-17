@@ -91,6 +91,20 @@ function runMigrations(db) {
   } catch (error) {
     console.error('Timestamp format migration error:', error.message);
   }
+
+  // Migration: Add max_lookback_minutes column to jobs
+  try {
+    const jobsInfo = db.prepare("PRAGMA table_info(jobs)").all();
+    const hasMaxLookback = jobsInfo.some(col => col.name === 'max_lookback_minutes');
+
+    if (!hasMaxLookback) {
+      console.log('Running migration: Adding max_lookback_minutes column to jobs');
+      db.prepare("ALTER TABLE jobs ADD COLUMN max_lookback_minutes INTEGER DEFAULT 30").run();
+      console.log('✓ Max lookback migration completed');
+    }
+  } catch (error) {
+    console.error('Max lookback migration error:', error.message);
+  }
 }
 
 function ensureAdminUser(db) {
@@ -98,16 +112,33 @@ function ensureAdminUser(db) {
     const adminCheck = db.prepare('SELECT COUNT(*) as count FROM admin_users WHERE username = ?').get('admin');
 
     if (adminCheck.count === 0) {
-      const passwordHash = bcrypt.hashSync('GPRIDE2255', 10);
+      // Use environment variable or generate random password
+      const defaultPassword = process.env.ADMIN_PASSWORD || generateRandomPassword();
+      const passwordHash = bcrypt.hashSync(defaultPassword, 10);
       db.prepare(`
         INSERT INTO admin_users (username, password_hash)
         VALUES (?, ?)
       `).run('admin', passwordHash);
-      console.log('✓ Default admin user created (username: admin, password: GPRIDE2255)');
+
+      if (process.env.ADMIN_PASSWORD) {
+        console.log('✓ Default admin user created (username: admin, password: from ADMIN_PASSWORD env var)');
+      } else {
+        console.log('✓ Default admin user created (username: admin, password: ' + defaultPassword + ')');
+        console.log('⚠️  IMPORTANT: Save this password! Set ADMIN_PASSWORD env var to customize.');
+      }
     }
   } catch (error) {
     console.error('Error ensuring admin user:', error.message);
   }
+}
+
+function generateRandomPassword() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$%';
+  let password = '';
+  for (let i = 0; i < 16; i++) {
+    password += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return password;
 }
 
 function getDatabase() {

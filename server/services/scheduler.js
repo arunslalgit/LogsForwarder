@@ -6,6 +6,7 @@ const { InfluxClient } = require('./influxClient');
 const { getLogger } = require('../utils/logger');
 
 const activeTasks = new Map();
+const runningJobs = new Map(); // Track currently executing jobs to prevent concurrent runs
 
 function startScheduler() {
   const logger = getLogger();
@@ -44,48 +45,121 @@ function scheduleJob(job) {
 
 async function executeJob(job) {
   const logger = getLogger();
-  console.log(`Executing job ${job.id}...`);
-  logger.info(`Executing job`, { jobId: job.id });
+  const jobStart = Date.now();
 
-  const logSource = db.getLogSource(job.log_source_id);
-  if (!logSource || !logSource.enabled) {
-    console.log(`Job ${job.id} skipped: log source disabled or not found`);
-    logger.warn(`Job skipped: log source disabled or not found`, { jobId: job.id });
+  // Check if job is already running
+  if (runningJobs.has(job.id)) {
+    const runningStartTime = runningJobs.get(job.id);
+    const runningSince = Date.now() - runningStartTime;
+    console.log(`[Scheduler] ⚠️  Job ${job.id} is already running (started ${Math.floor(runningSince / 1000)}s ago), skipping this execution`);
+    logger.warn(`Job execution skipped - already running`, {
+      jobId: job.id,
+      runningSinceMs: runningSince
+    });
     return;
   }
 
-  const influxConfig = db.getInfluxConfig(job.influx_config_id);
-  if (!influxConfig || !influxConfig.enabled) {
-    console.log(`Job ${job.id} skipped: InfluxDB config disabled or not found`);
-    logger.warn(`Job skipped: InfluxDB config disabled or not found`, { jobId: job.id });
-    return;
-  }
-
-  const regexPatterns = db.getRegexPatterns(job.log_source_id);
-  if (regexPatterns.length === 0) {
-    db.logActivity(job.id, 'warning', 'No regex pattern configured', 0, 0);
-    return;
-  }
-
-  const tagMappings = db.getTagMappings(job.log_source_id);
-  if (tagMappings.length === 0) {
-    db.logActivity(job.id, 'warning', 'No tag mappings configured', 0, 0);
-    return;
-  }
+  // Mark job as running
+  runningJobs.set(job.id, jobStart);
 
   try {
-    const sourceClient = LogSourceFactory.createClient(logSource);
-    const queryFilter = LogSourceFactory.getQueryFilter(logSource);
-    // InfluxDB config already has timestamp_format, just pass it through
-    const influxClient = new InfluxClient(influxConfig);
+    console.log(`\n========== JOB EXECUTION START ==========`);
+    console.log(`[Scheduler] Job ID: ${job.id}`);
+    console.log(`[Scheduler] Cron: ${job.cron_schedule}`);
+    console.log(`[Scheduler] Start Time: ${new Date().toISOString()}`);
+    logger.info(`Job execution started`, {
+      jobId: job.id,
+      cronSchedule: job.cron_schedule,
+      logSourceId: job.log_source_id,
+      influxConfigId: job.influx_config_id
+    });
+
+    const logSource = db.getLogSource(job.log_source_id);
+    if (!logSource || !logSource.enabled) {
+      console.log(`[Scheduler] ✗ Job ${job.id} skipped: log source ${job.log_source_id} disabled or not found`);
+      logger.warn(`Job skipped: log source disabled or not found`, { jobId: job.id, logSourceId: job.log_source_id });
+      return;
+    }
+    console.log(`[Scheduler] ✓ Log Source: "${logSource.name}" (${logSource.source_type})`);
+
+    const influxConfig = db.getInfluxConfig(job.influx_config_id);
+    if (!influxConfig || !influxConfig.enabled) {
+      console.log(`[Scheduler] ✗ Job ${job.id} skipped: InfluxDB config ${job.influx_config_id} disabled or not found`);
+      logger.warn(`Job skipped: InfluxDB config disabled or not found`, { jobId: job.id, influxConfigId: job.influx_config_id });
+      return;
+    }
+    console.log(`[Scheduler] ✓ InfluxDB Config: "${influxConfig.name}" (${influxConfig.url}/${influxConfig.database})`);
+
+    const regexPatterns = db.getRegexPatterns(job.log_source_id);
+    if (regexPatterns.length === 0) {
+      console.log(`[Scheduler] ✗ Job ${job.id} skipped: No regex pattern configured for log source ${job.log_source_id}`);
+      logger.warn(`Job skipped: no regex pattern`, { jobId: job.id, logSourceId: job.log_source_id });
+      db.logActivity(job.id, 'warning', 'No regex pattern configured', 0, 0);
+      return;
+    }
+    console.log(`[Scheduler] ✓ Regex Pattern: ${regexPatterns[0].pattern.substring(0, 100)}...`);
+
+    const tagMappings = db.getTagMappings(job.log_source_id);
+    if (tagMappings.length === 0) {
+      console.log(`[Scheduler] ✗ Job ${job.id} skipped: No tag mappings configured for log source ${job.log_source_id}`);
+      logger.warn(`Job skipped: no tag mappings`, { jobId: job.id, logSourceId: job.log_source_id });
+      db.logActivity(job.id, 'warning', 'No tag mappings configured', 0, 0);
+      return;
+    }
+    console.log(`[Scheduler] ✓ Tag Mappings: ${tagMappings.length} configured (${tagMappings.filter(t => !t.is_field).length} tags, ${tagMappings.filter(t => t.is_field).length} fields)`);
+
+    console.log(`[Scheduler] Creating clients and processor...`);
+
+    // Reconstruct log source and influx config objects from job data
+    // (getEnabledJobs returns flattened data with aliased columns)
+    const logSourceData = {
+      id: job.log_source_id,
+      name: job.log_source_name,
+      source_type: job.source_type,
+      dynatrace_url: job.dynatrace_url,
+      dynatrace_token: job.dynatrace_token,
+      dynatrace_query_filter: job.dynatrace_query_filter,
+      splunk_url: job.splunk_url,
+      splunk_token: job.splunk_token,
+      splunk_search_query: job.splunk_search_query,
+      splunk_index: job.splunk_index,
+      file_path: job.file_path,
+      file_search_query: job.file_search_query,
+      proxy_url: job.ls_proxy_url,
+      proxy_username: job.ls_proxy_username,
+      proxy_password: job.ls_proxy_password
+    };
+
+    const influxConfigData = {
+      id: job.influx_config_id,
+      name: job.influx_config_name,
+      url: job.influx_url,
+      database: job.influx_database,
+      username: job.influx_username,
+      password: job.influx_password,
+      measurement_name: job.measurement_name,
+      batch_size: job.batch_size,
+      batch_interval_seconds: job.batch_interval_seconds,
+      proxy_url: job.ic_proxy_url,
+      proxy_username: job.ic_proxy_username,
+      proxy_password: job.ic_proxy_password,
+      timestamp_format: job.timestamp_format
+    };
+
+    const sourceClient = LogSourceFactory.createClient(logSourceData);
+    const queryFilter = LogSourceFactory.getQueryFilter(logSourceData);
+    const influxClient = new InfluxClient(influxConfigData);
     const processor = new LogProcessor(regexPatterns[0].pattern, tagMappings);
+    console.log(`[Scheduler] ✓ All clients and processor initialized`);
 
     const lookbackMs = (job.lookback_minutes || 5) * 60000;
+    const maxLookbackMs = (job.max_lookback_minutes || 30) * 60000;
     const now = new Date();
 
     // Calculate query time window
     // If this is the first run, query from (now - lookback) to now
     // If not first run, query from (last_run - lookback) to now to create overlap buffer
+    // BUT: Cap the window to max_lookback_minutes to prevent source overload after long downtime
     let queryStart;
     if (!job.last_run) {
       // First run: query lookback minutes from now
@@ -94,10 +168,36 @@ async function executeJob(job) {
     } else {
       // Subsequent runs: start from last_run minus lookback to create overlap
       const lastRunTime = new Date(job.last_run);
-      queryStart = new Date(lastRunTime.getTime() - lookbackMs);
-      const windowMinutes = Math.round((now.getTime() - queryStart.getTime()) / 60000);
-      console.log(`Job ${job.id} - Query window: ${queryStart.toISOString()} to ${now.toISOString()} (~${windowMinutes} min, ${job.lookback_minutes || 5} min overlap)`);
+      const desiredStart = new Date(lastRunTime.getTime() - lookbackMs);
+      const timeSinceLastRun = now.getTime() - lastRunTime.getTime();
+
+      // Check if we need to cap the lookback window
+      if (timeSinceLastRun > maxLookbackMs) {
+        queryStart = new Date(now.getTime() - maxLookbackMs);
+        const cappedMinutes = Math.round(maxLookbackMs / 60000);
+        const gapMinutes = Math.round((queryStart.getTime() - lastRunTime.getTime()) / 60000);
+        console.log(`[Scheduler] ⚠️  MAX LOOKBACK CAP APPLIED`);
+        console.log(`[Scheduler]    - Job was down for: ${Math.round(timeSinceLastRun / 60000)} minutes`);
+        console.log(`[Scheduler]    - Capping to: ${cappedMinutes} minutes`);
+        console.log(`[Scheduler]    - Data gap: ${gapMinutes} minutes`);
+        console.log(`[Scheduler]    - Gap period: ${lastRunTime.toISOString()} to ${queryStart.toISOString()}`);
+        logger.warn(`Max lookback cap applied`, {
+          jobId: job.id,
+          downMinutes: Math.round(timeSinceLastRun / 60000),
+          cappedToMinutes: cappedMinutes,
+          gapMinutes: gapMinutes,
+          lastRun: lastRunTime.toISOString(),
+          cappedStart: queryStart.toISOString()
+        });
+      } else {
+        queryStart = desiredStart;
+        const windowMinutes = Math.round((now.getTime() - queryStart.getTime()) / 60000);
+        console.log(`[Scheduler] Query window: ${windowMinutes} min (${queryStart.toISOString()} to ${now.toISOString()})`);
+        console.log(`[Scheduler] Overlap: ${job.lookback_minutes || 5} min to avoid data gaps`);
+      }
     }
+
+    console.log(`[Scheduler] Fetching logs from ${logSource.source_type} source...`);
 
     let logs;
     if (logSource.source_type === 'dynatrace') {
@@ -113,22 +213,34 @@ async function executeJob(job) {
       logs = await sourceClient.fetchLogs(queryFilter, queryStart, now, null);
     }
 
-    console.log(`Fetched ${logs.length} logs from ${logSource.source_type}`);
+    console.log(`[Scheduler] ✓ Fetched ${logs.length} logs from ${logSource.source_type}`);
     logger.info(`Fetched logs from source`, {
       jobId: job.id,
       sourceType: logSource.source_type,
-      logCount: logs.length
+      logCount: logs.length,
+      queryStart: queryStart.toISOString(),
+      queryEnd: now.toISOString()
     });
+
+    if (logs.length === 0) {
+      console.log(`[Scheduler] No logs to process, completing job`);
+    } else {
+      console.log(`[Scheduler] Processing ${logs.length} logs...`);
+    }
 
     let processed = 0;
     let failed = 0;
     const failureDetails = [];
+    const processingStart = Date.now();
 
     for (const log of logs) {
       try {
         const jsonContent = processor.extractJSON(log.message);
         if (!jsonContent) {
           failed++;
+          if (failed <= 3) { // Only log first 3 failures to console
+            console.log(`[Scheduler]   ✗ Log extraction failed at ${log.timestamp}`);
+          }
           failureDetails.push({
             reason: 'JSON extraction failed',
             log_message: log.message.substring(0, 500), // First 500 chars
@@ -140,8 +252,15 @@ async function executeJob(job) {
         const influxPoint = processor.mapToInflux(log, jsonContent);
         influxClient.add(influxPoint);
         processed++;
+
+        // Log progress every 100 logs
+        if (processed % 100 === 0) {
+          console.log(`[Scheduler]   Progress: ${processed}/${logs.length} logs processed`);
+        }
       } catch (error) {
-        console.error('Error processing log:', error.message);
+        if (failed < 3) { // Only log first 3 errors to console
+          console.error(`[Scheduler]   ✗ Error processing log:`, error.message);
+        }
         failed++;
         failureDetails.push({
           reason: error.message,
@@ -152,19 +271,34 @@ async function executeJob(job) {
       }
     }
 
+    const processingDuration = Date.now() - processingStart;
+    console.log(`[Scheduler] Processing complete: ${processed} successful, ${failed} failed (${processingDuration}ms)`);
+    logger.info('Log processing complete', {
+      jobId: job.id,
+      totalLogs: logs.length,
+      processed: processed,
+      failed: failed,
+      processingMs: processingDuration
+    });
+
     // Flush remaining points to InfluxDB
+    console.log(`[Scheduler] Flushing remaining points to InfluxDB...`);
     try {
       await influxClient.flush();
+      console.log(`[Scheduler] ✓ All points flushed to InfluxDB`);
     } catch (flushError) {
-      console.error(`InfluxDB flush error for job ${job.id}:`, flushError.message);
+      console.error(`[Scheduler] ✗ InfluxDB flush failed:`, flushError.message);
       logger.error(`InfluxDB flush failed`, {
         jobId: job.id,
         error: flushError.message,
-        stack: flushError.stack
+        stack: flushError.stack,
+        processed: processed,
+        failed: failed
       });
       throw flushError; // Re-throw to be caught by outer catch
     }
 
+    console.log(`[Scheduler] Updating job run status...`);
     db.updateJobRun(job.id, true);
 
     // Include failure details if any failures occurred
@@ -179,6 +313,7 @@ async function executeJob(job) {
       }
     } : null;
 
+    console.log(`[Scheduler] Logging activity to database...`);
     db.logActivity(
       job.id,
       'info',
@@ -188,31 +323,72 @@ async function executeJob(job) {
       details
     );
 
-    console.log(`Job ${job.id} completed: ${processed} processed, ${failed} failed`);
-    logger.info(`Job completed`, {
+    const jobDuration = Date.now() - jobStart;
+    const total = processed + failed;
+    const successRate = total > 0 ? ((processed / total) * 100).toFixed(2) : '0';
+    console.log(`\n========== JOB EXECUTION COMPLETE ==========`);
+    console.log(`[Scheduler] Job ID: ${job.id}`);
+    console.log(`[Scheduler] Status: SUCCESS`);
+    console.log(`[Scheduler] Duration: ${jobDuration}ms`);
+    console.log(`[Scheduler] Processed: ${processed} logs`);
+    console.log(`[Scheduler] Failed: ${failed} logs`);
+    console.log(`[Scheduler] Success Rate: ${successRate}%`);
+    console.log(`[Scheduler] End Time: ${new Date().toISOString()}`);
+    console.log(`==========================================\n`);
+
+    logger.info(`Job completed successfully`, {
       jobId: job.id,
+      durationMs: jobDuration,
       processed,
       failed,
-      successRate: processed > 0 ? ((processed / (processed + failed)) * 100).toFixed(2) + '%' : '0%'
+      successRate: successRate + '%',
+      logSource: logSource.name,
+      influxConfig: influxConfig.name
     });
 
   } catch (error) {
-    console.error(`Job ${job.id} error:`, error.message);
+    const jobDuration = Date.now() - jobStart;
+    console.log(`\n========== JOB EXECUTION FAILED ==========`);
+    console.log(`[Scheduler] Job ID: ${job.id}`);
+    console.log(`[Scheduler] Status: FAILED`);
+    console.log(`[Scheduler] Duration: ${jobDuration}ms`);
+    console.log(`[Scheduler] Error: ${error.message}`);
+    console.log(`[Scheduler] Error Type: ${error.name}`);
+    if (error.code) {
+      console.log(`[Scheduler] Error Code: ${error.code}`);
+    }
+    console.log(`[Scheduler] End Time: ${new Date().toISOString()}`);
+    console.log(`==========================================\n`);
 
     const errorDetails = {
       error_type: error.name,
       error_message: error.message,
+      error_code: error.code,
       stack_trace: error.stack,
+      job_duration_ms: jobDuration,
       job_config: {
         log_source_id: job.log_source_id,
         log_source_name: logSource?.name,
         influx_config_id: job.influx_config_id,
         influx_config_name: influxConfig?.name,
-        lookback_minutes: job.lookback_minutes || 5
+        lookback_minutes: job.lookback_minutes || 5,
+        max_lookback_minutes: job.max_lookback_minutes || 30
       }
     };
 
+    logger.error(`Job failed`, {
+      jobId: job.id,
+      durationMs: jobDuration,
+      error: error.message,
+      errorType: error.name,
+      errorCode: error.code
+    });
+
     db.logActivity(job.id, 'error', error.message, 0, 0, errorDetails);
+  } finally {
+    // Always remove job from running set when execution completes or fails
+    runningJobs.delete(job.id);
+    console.log(`[Scheduler] Job ${job.id} execution lock released`);
   }
 }
 

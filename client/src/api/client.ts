@@ -116,6 +116,10 @@ export const api = {
   }),
   deleteJob: (id: number) => request<{ message: string }>(`/jobs/${id}`, { method: 'DELETE' }),
   runJob: (id: number) => request<{ success: boolean; message: string }>(`/jobs/${id}/run`, { method: 'POST' }),
+  resetJobLastRun: (id: number, minutes: number) => request<{ message: string }>(`/jobs/${id}/reset-last-run`, {
+    method: 'POST',
+    body: JSON.stringify({ minutes }),
+  }),
 
   getActivityLogs: (limit = 100, offset = 0) => request<ActivityLog[]>(`/activity-logs?limit=${limit}&offset=${offset}`),
 
